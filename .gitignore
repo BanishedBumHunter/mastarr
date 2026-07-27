@@ -1,0 +1,28 @@
+# Secrets & runtime state
+.env
+*.env
+!.env.example
+data/
+*.db
+*.db-journal
+secret.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Node
+node_modules/
+frontend/dist/
+.vite/
+*.tsbuildinfo
+
+# Editor / OS
+.DS_Store
+.idea/
+*.swp

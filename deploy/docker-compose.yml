@@ -1,0 +1,75 @@
+# Mastarr — TrueNAS SCALE custom app / plain Docker Compose.
+#
+# The *arr services are assumed to be separate containers or apps reachable over the LAN
+# by URL. Mastarr deliberately does NOT share a network namespace with them — it only
+# needs HTTP access to each service's API.
+
+services:
+  mastarr:
+    image: mastarr:latest
+    # To build locally instead of pulling, run from the repo root:
+    #   docker compose -f deploy/docker-compose.yml up --build
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    container_name: mastarr
+    restart: unless-stopped
+
+    ports:
+      - "8770:8000"
+
+    environment:
+      # --- Storage -------------------------------------------------------
+      MASTARR_DATA_DIR: /data
+
+      # --- Secrets -------------------------------------------------------
+      # Both are generated and persisted to /data on first run if unset. Set them
+      # explicitly to keep sessions and stored API keys valid across a volume reset.
+      #   Fernet key:  python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+      #   JWT secret:  openssl rand -base64 48
+      # MASTARR_SECRET_KEY: ""
+      # MASTARR_JWT_SECRET: ""
+
+      # --- Behaviour -----------------------------------------------------
+      MASTARR_SESSION_HOURS: "12"
+      MASTARR_HTTP_TIMEOUT: "10"
+      MASTARR_LOG_LEVEL: INFO
+
+      # Hosts the "Scan" button probes when the form is left empty.
+      # MASTARR_DISCOVERY_HOSTS: '["192.168.1.250"]'
+
+      # --- Declarative config (optional) ----------------------------------
+      # Mount config.yml below and point at it to version-control the whole setup.
+      # MASTARR_CONFIG_FILE: /config/config.yml
+
+      # API keys referenced by config.yml via `api_key_env`, so the committed YAML
+      # stays free of credentials.
+      # SONARR_API_KEY: ""
+      # RADARR_API_KEY: ""
+      # PROWLARR_API_KEY: ""
+
+    volumes:
+      # SQLite DB, the generated secret keys, and any runtime state.
+      - mastarr-data:/data
+      # Uncomment alongside MASTARR_CONFIG_FILE above.
+      # - ./config.yml:/config/config.yml:ro
+
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4).status==200 else 1)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  mastarr-data:
+    # On TrueNAS SCALE, replace this named volume with a host path bind to a dataset:
+    #   driver: local
+    #   driver_opts:
+    #     type: none
+    #     o: bind
+    #     device: /mnt/tank/apps/mastarr
