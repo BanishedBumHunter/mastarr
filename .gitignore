@@ -1,11 +1,24 @@
 # Secrets & runtime state
 .env
+.env.*
 *.env
 !.env.example
 data/
 *.db
 *.db-journal
+
+# Generated secrets. Normally these live in the data dir, but MASTARR_DATA_DIR can
+# point anywhere — including the repo root — so match them by name too.
 secret.key
+jwt.secret
+
+# Real config, as opposed to the committed example. config.example.yml documents an
+# inline `api_key:` field, so a copied-and-filled config.yml is the single most likely
+# way a live *arr key gets committed.
+config.yml
+config.yaml
+!config.example.yml
+!deploy/config.example.yml
 
 # Python
 __pycache__/
@@ -21,6 +34,9 @@ node_modules/
 frontend/dist/
 .vite/
 *.tsbuildinfo
+
+# Build output copied into the image by the Dockerfile — never source.
+backend/mastarr/static/
 
 # Editor / OS
 .DS_Store

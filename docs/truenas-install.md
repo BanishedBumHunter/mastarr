@@ -32,9 +32,30 @@ Mastarr will live at `/mnt/faststorage/app-configs/mastarr` and listen on **8770
 ## Step 1 — Get the image onto the NAS
 
 TrueNAS pulls images; it does **not** build them. `build:` in a custom app's compose file
-will not work. Pick one of these.
+will not work, and there is no `git clone` step — **putting the repo on GitHub is not by
+itself enough**. Something has to publish a built image. Pick one of these.
 
-### Option A — SSH transfer (no registry needed) ✅ simplest
+### Option A — GitHub + GHCR ✅ best if the repo is on GitHub
+
+This is the "just paste a custom YAML" experience. [`.github/workflows/build.yml`](../.github/workflows/build.yml)
+runs the tests, builds the image, and pushes it to GitHub Container Registry on every push
+to `main`. No secrets to configure — it uses the automatic `GITHUB_TOKEN`.
+
+Push the repo, let the workflow run once, then make the package public:
+**GitHub → your profile → Packages → mastarr → Package settings → Change visibility →
+Public**. (Skip this if you'd rather add registry credentials to TrueNAS under
+**Apps → Manage Container Images**.)
+
+Then the TrueNAS custom app YAML is just:
+
+```yaml
+image: ghcr.io/<your-github-user>/mastarr:latest
+```
+
+Drop `pull_policy: never` — you *want* it to pull. Updating becomes: push to `main`, wait
+for the build, then **Apps → mastarr → Restart**. No SSH, no local Docker.
+
+### Option B — SSH transfer (no registry, no GitHub needed)
 
 SSH is already enabled on the NAS. Build locally, stream the image straight over:
 
@@ -51,28 +72,16 @@ ssh truenas_admin@192.168.1.250 'docker images | grep mastarr'
 ```
 
 Because the image now exists locally on the NAS, the compose file must not try to pull it —
-`pull_policy: never` in Step 3 handles that.
+`pull_policy: never` in Step 3 handles that. (With Option A you would remove that line.)
 
 > Only password SSH is configured for `truenas_admin` (no key installed). If you want this
 > to be scriptable, add your key first:
 > `ssh-copy-id truenas_admin@192.168.1.250`
 
-### Option B — Registry
-
-Better if you'll rebuild often or want TrueNAS to handle updates:
-
-```bash
-docker build -f backend/Dockerfile -t ghcr.io/<you>/mastarr:latest .
-docker push ghcr.io/<you>/mastarr:latest
-```
-
-Use that image name in Step 3 and drop `pull_policy: never`. Add registry credentials under
-**Apps → Manage Container Images** if the package is private.
-
 ### Option C — Build on the NAS
 
 Clone the repo to a dataset and `docker build` over SSH. Works, but it puts a toolchain and
-source tree on the NAS for no real benefit over A. Not recommended.
+source tree on the NAS for no real benefit over A or B. Not recommended.
 
 ---
 
@@ -101,8 +110,10 @@ option and paste this:
 ```yaml
 services:
   mastarr:
+    # Option A (GHCR): image: ghcr.io/<your-github-user>/mastarr:latest
+    #                  ...and delete the pull_policy line below.
     image: mastarr:latest
-    # Required for Option A — the image was loaded locally, so don't try to pull it.
+    # Option B only — the image was loaded locally, so don't try to pull it.
     pull_policy: never
     restart: unless-stopped
 
@@ -194,8 +205,9 @@ Almost always directory ownership. Confirm:
 The numeric owner must be `1000`.
 
 **`image not found` / app stuck pulling**
-`pull_policy: never` is set but the image was never loaded. Re-run Step 1 Option A and check
-`docker images | grep mastarr` on the NAS.
+With Option B, `pull_policy: never` is set but the image was never loaded — re-run Step 1
+and check `docker images | grep mastarr` on the NAS. With Option A, the GHCR package is
+still private: make it public, or add credentials under **Apps → Manage Container Images**.
 
 **Everything shows "Unreachable"**
 Mastarr can't reach the *arrs. Verify from the NAS itself:
