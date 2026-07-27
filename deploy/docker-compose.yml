@@ -53,6 +53,10 @@ services:
       - mastarr-data:/data
       # Uncomment alongside MASTARR_CONFIG_FILE above.
       # - ./config.yml:/config/config.yml:ro
+      #
+      # On TrueNAS, replace the named volume with a host path matching the convention
+      # your other apps already use — see docs/truenas-install.md:
+      # - /mnt/faststorage/app-configs/mastarr:/data
 
     healthcheck:
       test:

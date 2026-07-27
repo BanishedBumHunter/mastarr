@@ -117,42 +117,42 @@ credential-free.
 ## Deploying on TrueNAS SCALE
 
 Mastarr ships as a single container plus one volume, which maps cleanly onto a TrueNAS
-custom app.
+custom app (they are plain `docker compose` under the hood).
 
-1. **Create a dataset** for persistent state, e.g. `tank/apps/mastarr`.
+**→ Full walkthrough: [docs/truenas-install.md](docs/truenas-install.md)**, written against a
+real TrueNAS SCALE 25.10 target.
 
-2. **Build and publish the image** (TrueNAS pulls, it does not build):
+The short version:
 
-   ```bash
-   docker build -f backend/Dockerfile -t <your-registry>/mastarr:latest .
-   docker push <your-registry>/mastarr:latest
-   ```
-
-   For a registry-free setup, build on the NAS itself and reference `mastarr:latest`.
-
-3. **Apps → Discover Apps → Custom App** (or *Install via YAML* on newer releases) and use
-   [`deploy/docker-compose.yml`](deploy/docker-compose.yml) as your starting point. The
-   pieces that matter:
-
-   - **Image**: `<your-registry>/mastarr:latest`
-   - **Port**: container `8000` → host `8770` (any free host port)
-   - **Storage**: host path `/mnt/tank/apps/mastarr` → mount `/data`
-   - **Environment**: at minimum set `MASTARR_SECRET_KEY` and `MASTARR_JWT_SECRET` so a
-     redeploy doesn't invalidate stored keys and sessions
-
-4. **Permissions.** The container runs as uid **1000**. Make sure the dataset is writable
-   by it, or the app cannot create its database:
+1. **Get the image onto the NAS.** TrueNAS pulls images, it does not build them — `build:`
+   in a custom app's compose file will not work. The simplest route needs no registry:
 
    ```bash
-   chown -R 1000:1000 /mnt/tank/apps/mastarr
+   docker build -f backend/Dockerfile -t mastarr:latest .
+   docker save mastarr:latest | ssh <user>@<nas> 'docker load'
    ```
 
-5. **Networking.** Mastarr reaches the *arrs over the LAN by URL — it does **not** need to
-   share their network namespace. Use the addresses you'd type in a browser, e.g.
-   `http://192.168.1.250:8989`. If your *arr apps are only on an internal bridge, expose
-   them or put Mastarr on the same bridge.
+   Then set `pull_policy: never` in the compose file so it doesn't try to fetch it.
 
-6. Browse to `http://<nas-ip>:8770` and create the admin account.
+2. **Create the data directory and give it to uid 1000** (the container is non-root; without
+   this it cannot create its database):
+
+   ```bash
+   mkdir -p /mnt/<pool>/app-configs/mastarr
+   chown -R 1000:1000 /mnt/<pool>/app-configs/mastarr
+   ```
+
+3. **Apps → Discover Apps → Custom App**, paste the compose YAML from the install guide.
+   Map container `8000` → host `8770`, mount your directory at `/data`, and set
+   `MASTARR_SECRET_KEY` and `MASTARR_JWT_SECRET` explicitly so a reinstall doesn't
+   invalidate stored keys and log everyone out.
+
+4. Browse to `http://<nas-ip>:8770`, create the admin account, then **Services → Scan**.
+
+**Networking.** Mastarr reaches the *arrs by URL and does **not** need to share their network
+namespace. When it runs on the same NAS, address them by host IP
+(`http://192.168.1.250:8989`) — TrueNAS gives each app its own compose project, so container
+names don't resolve across apps.
 
 Put Mastarr behind your reverse proxy for TLS. The session cookie is intentionally **not**
 `Secure`, because that would silently break plain-HTTP LAN access — terminate TLS at the
