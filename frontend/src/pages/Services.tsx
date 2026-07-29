@@ -28,32 +28,81 @@ function DiscoveryPanel() {
     onSuccess: setFound,
   })
 
-  const add = useMutation({
-    mutationFn: async (candidate: Discovered) => {
-      const apiKey = keys[candidate.url] ?? ''
-      // Confirm identity before saving, so the stored type is proven rather than guessed
-      // from the port.
+  // Per-row state, keyed by URL. A single shared mutation would mean one row's
+  // in-flight request disables every other row's button, and one row's success
+  // would have to guess which row it belonged to.
+  const [added, setAdded] = useState<Record<string, boolean>>({})
+  const [busy, setBusy] = useState<Record<string, boolean>>({})
+  const [rowError, setRowError] = useState<Record<string, string>>({})
+  const [addingAll, setAddingAll] = useState(false)
+
+  const addOne = async (candidate: Discovered): Promise<boolean> => {
+    const url = candidate.url
+    setBusy((prev) => ({ ...prev, [url]: true }))
+    setRowError((prev) => {
+      const next = { ...prev }
+      delete next[url]
+      return next
+    })
+
+    try {
+      const apiKey = keys[url] ?? ''
+      // Confirm identity before saving, so the stored type is proven rather than
+      // guessed from the port.
       const identified = apiKey
-        ? await api.identify(candidate.url, apiKey, candidate.service_type)
+        ? await api.identify(url, apiKey, candidate.service_type)
         : candidate
       const type = identified.service_type ?? candidate.service_type
       if (!type) throw new Error('Could not determine the service type. Check the API key.')
 
-      return api.createService({
+      await api.createService({
         name: identified.app_name ?? type.charAt(0).toUpperCase() + type.slice(1),
         service_type: type,
-        url: candidate.url,
+        url,
         api_key: apiKey || undefined,
       })
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['services'] })
-      await queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-      setFound(
-        (prev) => prev?.map((c) => ({ ...c, already_configured: true })) ?? null,
-      )
-    },
-  })
+      // Only this row. Marking them all was the original bug: adding one service
+      // disabled every other row, forcing a reload that discarded typed-in keys.
+      setAdded((prev) => ({ ...prev, [url]: true }))
+      return true
+    } catch (err) {
+      setRowError((prev) => ({ ...prev, [url]: (err as Error).message }))
+      return false
+    } finally {
+      setBusy((prev) => {
+        const next = { ...prev }
+        delete next[url]
+        return next
+      })
+    }
+  }
+
+  const refreshLists = async () => {
+    await queryClient.invalidateQueries({ queryKey: ['services'] })
+    await queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+  }
+
+  const isAddable = (c: Discovered) => !c.already_configured && !added[c.url]
+
+  const handleAddOne = async (candidate: Discovered) => {
+    if (await addOne(candidate)) await refreshLists()
+  }
+
+  const handleAddAll = async () => {
+    const targets = (found ?? []).filter(isAddable)
+    setAddingAll(true)
+    try {
+      // Sequential: keeps failures attributable to a row, and avoids firing a
+      // burst of identify calls at every service at once.
+      for (const candidate of targets) await addOne(candidate)
+      await refreshLists()
+    } finally {
+      setAddingAll(false)
+    }
+  }
+
+  const addableCount = (found ?? []).filter(isAddable).length
+  const readyCount = (found ?? []).filter((c) => isAddable(c) && (keys[c.url] ?? '').trim()).length
 
   return (
     <div className="section">
@@ -83,68 +132,106 @@ function DiscoveryPanel() {
       </div>
 
       {scan.error ? <ErrorBox>{(scan.error as Error).message}</ErrorBox> : null}
-      {add.error ? <ErrorBox>{(add.error as Error).message}</ErrorBox> : null}
 
       {found !== null ? (
         found.length === 0 ? (
           <p className="subtle">No *arr services responded on those hosts.</p>
         ) : (
-          <div className="table-wrap" style={{ marginTop: 14 }}>
-            <table>
-              <thead>
-                <tr>
-                  <th>Found at</th>
-                  <th>Looks like</th>
-                  <th>API key</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {found.map((candidate) => (
-                  <tr key={candidate.url}>
-                    <td>
-                      <code>{candidate.url}</code>
-                    </td>
-                    <td>
-                      {candidate.service_type ?? 'unknown'}
-                      {candidate.confirmed ? (
-                        <span className="badge online" style={{ marginLeft: 6 }}>
-                          confirmed
-                        </span>
-                      ) : null}
-                      <div className="subtle" style={{ fontSize: 11.5 }}>
-                        {candidate.detail}
-                      </div>
-                    </td>
-                    <td style={{ minWidth: 190 }}>
-                      <input
-                        type="password"
-                        placeholder="Paste API key"
-                        value={keys[candidate.url] ?? ''}
-                        disabled={candidate.already_configured}
-                        onChange={(event) =>
-                          setKeys((prev) => ({ ...prev, [candidate.url]: event.target.value }))
-                        }
-                      />
-                    </td>
-                    <td>
-                      {candidate.already_configured ? (
-                        <span className="badge plain">Added</span>
-                      ) : (
-                        <button
-                          className="small primary"
-                          onClick={() => add.mutate(candidate)}
-                          disabled={add.isPending}
-                        >
-                          Add
-                        </button>
-                      )}
-                    </td>
+          <>
+            <div className="row wrap" style={{ marginTop: 14, marginBottom: 8 }}>
+              <span className="subtle grow">
+                Paste every key first, then add them all at once — adding one no longer
+                disturbs the others.
+              </span>
+              <button
+                className="primary small"
+                onClick={() => void handleAddAll()}
+                disabled={addingAll || addableCount === 0}
+              >
+                {addingAll
+                  ? 'Adding…'
+                  : `Add all${readyCount ? ` (${readyCount} with keys)` : ''}`}
+              </button>
+            </div>
+
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Found at</th>
+                    <th>Looks like</th>
+                    <th>API key</th>
+                    <th />
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {found.map((candidate) => {
+                    const url = candidate.url
+                    const isAdded = candidate.already_configured || added[url]
+                    const isBusy = busy[url]
+                    return (
+                      <tr key={url}>
+                        <td>
+                          <code>{url}</code>
+                        </td>
+                        <td>
+                          {candidate.service_type ?? 'unknown'}
+                          {candidate.confirmed ? (
+                            <span className="badge online" style={{ marginLeft: 6 }}>
+                              confirmed
+                            </span>
+                          ) : null}
+                          <div className="subtle" style={{ fontSize: 11.5 }}>
+                            {candidate.detail}
+                          </div>
+                          {rowError[url] ? (
+                            <div
+                              className="subtle"
+                              style={{ fontSize: 11.5, color: 'var(--danger)' }}
+                            >
+                              {rowError[url]}
+                            </div>
+                          ) : null}
+                        </td>
+                        <td style={{ minWidth: 190 }}>
+                          <input
+                            type="password"
+                            placeholder="Paste API key"
+                            value={keys[url] ?? ''}
+                            disabled={isAdded}
+                            onChange={(event) =>
+                              setKeys((prev) => ({ ...prev, [url]: event.target.value }))
+                            }
+                            onKeyDown={(event) => {
+                              // Enter adds this row, so you can paste-tab-paste-enter
+                              // straight down the list without touching the mouse.
+                              if (event.key === 'Enter' && !isAdded && !isBusy) {
+                                void handleAddOne(candidate)
+                              }
+                            }}
+                          />
+                        </td>
+                        <td>
+                          {isAdded ? (
+                            <span className="badge online">Added</span>
+                          ) : (
+                            <button
+                              className="small primary"
+                              onClick={() => void handleAddOne(candidate)}
+                              // Only this row is disabled while it is in flight.
+                              disabled={isBusy || addingAll}
+                            >
+                              {isBusy ? 'Adding…' : 'Add'}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
         )
       ) : null}
     </div>
