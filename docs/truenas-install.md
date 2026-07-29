@@ -216,8 +216,17 @@ git pull                      # or make your changes
 git push                      # CI rebuilds and republishes automatically
 ```
 
-Then on the NAS: **Apps → mastarr → ⋮ → Pull image**, or just **Restart**. Your `/data`
-volume persists, so services, users and settings survive the update.
+Then on the NAS: **Apps → mastarr → ⋮ → Pull image**.
+
+> **Restart is not enough, and neither is Redeploy.** Both reuse the image already on the
+> NAS. Because the tag is `:latest` and the tag hasn't changed, Docker sees no reason to
+> fetch anything — so the app comes back up running exactly the same code, healthy and
+> apparently fine. **Pull image** is the step that actually fetches the new build.
+>
+> Quick check that you got the new version: a route added in the update should return
+> `401` (exists, needs auth) rather than `404` (missing).
+
+Your `/data` volume persists, so services, users and settings survive the update.
 
 ---
 
