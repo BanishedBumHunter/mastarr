@@ -78,12 +78,26 @@ That should print **nothing**. `.gitignore` already covers `.env*`, `config.yml`
 
 ### 2.2 Let CI build the image
 
-[`.github/workflows/build.yml`](../.github/workflows/build.yml) is already in the repo. On
-your first push to `main` it runs the tests, builds the frontend, builds the image, and
-pushes it to GitHub Container Registry. There are **no secrets to configure** — it uses the
-`GITHUB_TOKEN` that Actions provides automatically.
+`.github/workflows/build.yml` runs the tests, builds the frontend, builds the image, and
+pushes it to GitHub Container Registry on every push to `main`. There are **no secrets to
+configure** — it uses the `GITHUB_TOKEN` that Actions provides automatically.
 
 Watch it under the repo's **Actions** tab. It takes a few minutes.
+
+> **If your push is rejected with** *"refusing to allow a Personal Access Token to create or
+> update workflow `.github/workflows/build.yml` without `workflow` scope"*:
+>
+> GitHub requires a separate `workflow` scope to push workflow files, and it rejects the
+> whole push if *any* commit in it touches one. Either:
+>
+> - **Add the scope** — github.com/settings/tokens → your token → tick **`workflow`** →
+>   Update. Then push again. (Cleanest.)
+> - **Or add the file through the web UI** — your browser session isn't subject to the
+>   token's scopes. Repo → **Actions** → **set up a workflow yourself**, paste the contents
+>   of `build.yml`, commit. Then `git pull` locally to sync.
+>
+> This only bites once, when bootstrapping the repo. Anyone who *forks* it gets the
+> workflow already in place.
 
 ### 2.3 Make the package public
 
