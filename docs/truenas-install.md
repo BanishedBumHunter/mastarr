@@ -239,9 +239,23 @@ Ownership mismatch, the most common failure. The error tells you the exact uid M
 running as. Either `chown -R <that uid>:<that gid> /mnt/YOURPOOL/apps/mastarr`, or change
 `user:` in the YAML to match whoever already owns the directory.
 
+**`Failed 'up' action` → `invalid reference format: repository name must be lowercase`**
+Your `image:` line has capital letters. Docker image names must be **entirely lowercase**,
+even though GitHub usernames often aren't. GHCR lowercases them for you, so a user named
+`BanishedBumHunter` publishes to `ghcr.io/banishedbumhunter/mastarr:latest`. Lowercase the
+whole line and reinstall.
+
 **`denied` / `403` / `manifest unknown` when pulling the image**
-The GHCR package is still private — see 2.3. Or the username in `image:` is wrong; it must
-be your GitHub username, lowercase.
+The GHCR package is private — see 2.3. (If your repo is public, it won't be.) Or the
+username in `image:` is misspelled.
+
+**Anything else, on TrueNAS specifically**
+The real error is in the app lifecycle log, which the UI truncates to
+`[EFAULT] Failed 'up' action`. Read it over SSH:
+```bash
+tail -20 /var/log/app_lifecycle.log
+```
+It names the actual cause — bad image reference, missing device, unreadable path.
 
 **`image not found` and you used the manual `docker save` route**
 `pull_policy: never` is set but the image was never loaded onto the NAS. Check with

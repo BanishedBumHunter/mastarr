@@ -5,7 +5,7 @@
 #
 #  BEFORE YOU PASTE, change the five things marked  <<< CHANGE ME >>>
 #
-#    1. image:            your GitHub username (or leave the local-image variant)
+#    1. image:            your GitHub username — ALL LOWERCASE, always
 #    2. MASTARR_SECRET_KEY   generate it — see below
 #    3. MASTARR_JWT_SECRET   generate it — see below
 #    4. volumes:          your actual dataset path
@@ -24,8 +24,16 @@ services:
   mastarr:
     # ------------------------------------------------------------------ 1. image
     # Published by this repo's GitHub Actions workflow on every push to main.
-    # Make the GHCR package PUBLIC after the first build, or TrueNAS gets a 403.
-    image: ghcr.io/YOUR_GITHUB_USERNAME/mastarr:latest    # <<< CHANGE ME >>>
+    #
+    # !! MUST BE ALL LOWERCASE !!  Docker rejects capitals in image names with
+    # "invalid reference format: repository name must be lowercase" — even though
+    # your GitHub username may well have capitals in it. GHCR itself lowercases
+    # them, so `github.com/YourName` publishes to `ghcr.io/yourname`.
+    #
+    #   GitHub user "BanishedBumHunter"  ->  ghcr.io/banishedbumhunter/mastarr:latest
+    #
+    # If the repo is public, the package is public too and needs no credentials.
+    image: ghcr.io/your_github_username/mastarr:latest    # <<< CHANGE ME (lowercase!) >>>
     #
     # Alternative — if you transferred the image manually with
     # `docker save mastarr:latest | ssh user@nas 'docker load'`, use these two
