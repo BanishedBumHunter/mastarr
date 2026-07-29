@@ -6,7 +6,7 @@ import pytest
 
 from mastarr.roles import Role, satisfies
 
-from .conftest import ADMIN_ENDPOINTS
+from .conftest import ADMIN_ENDPOINTS, REQUESTER_ENDPOINTS
 
 
 # ------------------------------------------------------------------ role model
@@ -169,15 +169,17 @@ def test_requester_can_reach_requester_endpoints(admin_client):
 
     admin_client.cookies.clear()
     response = admin_client.get(
-        "/api/requests/capabilities", headers={"Authorization": f"Bearer {token}"}
+        "/api/discover/capabilities", headers={"Authorization": f"Bearer {token}"}
     )
+    # 200 with available=False when no Jellyseerr is connected — the point is that a
+    # Requester reaches it at all.
     assert response.status_code == 200
-    assert response.json()["username"] == "bob"
+    assert response.json()["available"] is False
 
 
 def test_admin_also_satisfies_requester_endpoints(admin_client):
     """Rank ordering means admin inherits requester access without a second grant."""
-    assert admin_client.get("/api/requests/capabilities").status_code == 200
+    assert admin_client.get("/api/discover/capabilities").status_code == 200
 
 
 # ------------------------------------------------------------ user management
@@ -282,3 +284,33 @@ def test_disabled_account_cannot_log_in(admin_client):
         "/api/auth/login", json={"username": "eve", "password": "evepassword1"}
     )
     assert response.status_code == 403
+
+
+@pytest.mark.parametrize("method,path", REQUESTER_ENDPOINTS)
+def test_requester_endpoints_are_reachable_by_requesters(admin_client, method, path):
+    """Requester-level routes must not accidentally be admin-gated.
+
+    The inverse of the matrix above: it is just as broken for a Requester to be locked out
+    of Discover as it is for them to reach Users.
+    """
+    admin_client.post(
+        "/api/users",
+        json={"username": "bob", "password": "bobpassword1", "role": "requester"},
+    )
+    token = admin_client.post(
+        "/api/auth/token", json={"username": "bob", "password": "bobpassword1"}
+    ).json()["access_token"]
+
+    admin_client.cookies.clear()
+    response = admin_client.request(
+        method, path, headers={"Authorization": f"Bearer {token}"}
+    )
+    # 503 is fine — it means "no Jellyseerr connected", which is an availability answer,
+    # not an authorization one. 403 would mean the role gate is wrong.
+    assert response.status_code != 403, f"{method} {path} wrongly denied to a requester"
+    assert response.status_code != 401, f"{method} {path} rejected a valid token"
+
+
+@pytest.mark.parametrize("method,path", REQUESTER_ENDPOINTS)
+def test_requester_endpoints_still_reject_anonymous(client, method, path):
+    assert client.request(method, path).status_code == 401

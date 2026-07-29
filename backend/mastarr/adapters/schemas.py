@@ -169,3 +169,172 @@ class ServiceSnapshot(BaseModel):
     disk_space: list[DiskSpace] = Field(default_factory=list)
     queue_count: int | None = None
     checked_at: datetime | None = None
+
+
+# --------------------------------------------------------------- unified views
+
+
+class DateKind(str, Enum):
+    """Which kind of date a calendar entry represents.
+
+    Sonarr has exactly one date per episode. Radarr has three (`inCinemas`,
+    `digitalRelease`, `physicalRelease`) and an entry may carry all of them — so a naive
+    merge either triples the row or silently drops two thirds of the information. Adapters
+    collapse to one date and label which one it is; the UI filters on the label.
+    """
+
+    AIR = "air"
+    DIGITAL = "digital"
+    PHYSICAL = "physical"
+    CINEMA = "cinema"
+    RELEASE = "release"
+
+
+class CalendarEntry(BaseModel):
+    """One dated thing, from any service."""
+
+    service_id: int | None = None
+    service_type: str
+    service_name: str
+    media_kind: str  # series | movie | album | book
+    item_id: int
+    title: str  # the episode/movie title
+    parent_title: str | None = None  # series title, for episodes
+    date: datetime
+    date_kind: DateKind = DateKind.AIR
+    season_number: int | None = None
+    episode_number: int | None = None
+    has_file: bool = False
+    monitored: bool = True
+    overview: str | None = None
+    runtime_minutes: int | None = None
+    poster: str | None = None
+
+    @property
+    def episode_code(self) -> str | None:
+        if self.season_number is None or self.episode_number is None:
+            return None
+        return f"S{self.season_number:02d}E{self.episode_number:02d}"
+
+
+class LibraryItem(BaseModel):
+    """A series or movie, normalized so one grid can render both."""
+
+    service_id: int | None = None
+    service_type: str
+    service_name: str
+    media_kind: str
+    item_id: int
+    title: str
+    sort_title: str | None = None
+    year: int | None = None
+    overview: str | None = None
+    poster: str | None = None
+    status: str | None = None
+    monitored: bool = True
+    path: str | None = None
+    quality_profile_id: int | None = None
+    size_bytes: int = 0
+    added: datetime | None = None
+    genres: list[str] = Field(default_factory=list)
+    runtime_minutes: int | None = None
+    network: str | None = None  # series only
+    studio: str | None = None  # movie only
+    remote_id: str | None = None
+
+    # Progress. For movies this is 0/1 or 1/1; for series it's episode counts, so one
+    # progress bar works for both.
+    have_count: int = 0
+    total_count: int = 0
+
+    @property
+    def percent_complete(self) -> float:
+        if self.total_count <= 0:
+            return 0.0
+        return round(min(self.have_count / self.total_count, 1.0) * 100, 1)
+
+    @property
+    def is_missing(self) -> bool:
+        return self.monitored and self.have_count < self.total_count
+
+
+class Episode(BaseModel):
+    """A single episode, for the series detail view."""
+
+    id: int
+    season_number: int
+    episode_number: int
+    title: str | None = None
+    air_date: datetime | None = None
+    has_file: bool = False
+    monitored: bool = True
+    runtime_minutes: int | None = None
+    size_bytes: int = 0
+    overview: str | None = None
+
+
+class Season(BaseModel):
+    season_number: int
+    monitored: bool = True
+    episode_count: int = 0
+    episode_file_count: int = 0
+    size_bytes: int = 0
+    episodes: list[Episode] = Field(default_factory=list)
+
+    @property
+    def percent_complete(self) -> float:
+        if self.episode_count <= 0:
+            return 0.0
+        return round(self.episode_file_count / self.episode_count * 100, 1)
+
+
+class LibraryDetail(BaseModel):
+    """A library item plus everything the detail view needs."""
+
+    item: LibraryItem
+    seasons: list[Season] = Field(default_factory=list)
+    # Deep link into the native app, for the configuration Mastarr deliberately doesn't
+    # reimplement.
+    native_url: str | None = None
+
+
+class DiscoverResult(BaseModel):
+    """A search/browse hit from the request front-end (Jellyseerr/Overseerr)."""
+
+    tmdb_id: int
+    media_kind: str  # movie | tv
+    title: str
+    year: int | None = None
+    overview: str | None = None
+    poster_url: str | None = None
+    backdrop_url: str | None = None
+    vote_average: float | None = None
+    # From mediaInfo: 1 unknown, 2 pending, 3 processing, 4 partial, 5 available
+    media_status: int | None = None
+    already_requested: bool = False
+    available: bool = False
+
+
+class MediaRequest(BaseModel):
+    """A request in the front-end's queue."""
+
+    id: int
+    media_kind: str
+    # 1 pending, 2 approved, 3 declined
+    status: int
+    title: str | None = None
+    year: int | None = None
+    poster_url: str | None = None
+    tmdb_id: int | None = None
+    requested_by: str | None = None
+    requested_by_id: int | None = None
+    created_at: datetime | None = None
+    # From the linked mediaInfo, so the UI can show "approved but not downloaded yet".
+    media_status: int | None = None
+
+
+class DiscoverPage(BaseModel):
+    page: int = 1
+    total_pages: int = 1
+    total_results: int = 0
+    results: list[DiscoverResult] = Field(default_factory=list)

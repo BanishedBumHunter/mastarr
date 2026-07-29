@@ -55,6 +55,8 @@ def admin_client(client) -> TestClient:
     return client
 
 
+# Every admin-only endpoint. Parameterized over in test_auth so a newly added route that
+# forgets its role dependency fails the suite rather than shipping open.
 ADMIN_ENDPOINTS = [
     ("GET", "/api/dashboard"),
     ("GET", "/api/services"),
@@ -62,4 +64,22 @@ ADMIN_ENDPOINTS = [
     ("GET", "/api/users"),
     ("POST", "/api/users"),
     ("POST", "/api/discovery/scan"),
+    ("GET", "/api/library"),
+    ("GET", "/api/library/1/1"),
+    ("POST", "/api/library/1/1/monitor"),
+    ("POST", "/api/library/1/1/season-monitor"),
+    ("POST", "/api/library/1/1/search"),
+    ("DELETE", "/api/library/1/1"),
+    ("GET", "/api/activity/queue"),
+    ("GET", "/api/activity/history"),
+    ("GET", "/api/activity/wanted"),
+    ("GET", "/api/discover/users"),
+]
+
+# Reachable by Requesters too. Listed so the split is explicit and reviewable, rather than
+# something you have to infer by reading every router.
+REQUESTER_ENDPOINTS = [
+    ("GET", "/api/discover/capabilities"),
+    ("GET", "/api/calendar"),
+    ("GET", "/api/discover/requests"),
 ]

@@ -6,6 +6,30 @@
  * POST /api/auth/token.
  */
 
+export interface QueueItemT {
+  id: number
+  title: string
+  status: string
+  media_title: string | null
+  quality: string | null
+  size_bytes: number
+  size_left_bytes: number
+  download_client: string | null
+  indexer: string | null
+  error_message: string | null
+  estimated_completion: string | null
+}
+
+export interface HistoryItemT {
+  id: number
+  event_type: string
+  title: string
+  media_title: string | null
+  quality: string | null
+  date: string | null
+  source_title: string | null
+}
+
 export type ServiceStatus =
   | 'online'
   | 'degraded'
@@ -21,6 +45,7 @@ export interface User {
   role: Role
   is_active: boolean
   created_at: string
+  jellyseerr_user_id: number | null
 }
 
 export interface AuthState {
@@ -111,6 +136,146 @@ export interface Discovered {
   detail: string | null
 }
 
+
+// ------------------------------------------------------------- unified views
+
+export type DateKind = 'air' | 'digital' | 'physical' | 'cinema' | 'release'
+
+export interface ServiceFailure {
+  service_id: number | null
+  service_name: string
+  service_type: string
+  error: string
+}
+
+export interface CalendarEntry {
+  service_id: number | null
+  service_type: string
+  service_name: string
+  media_kind: string
+  item_id: number
+  title: string
+  parent_title: string | null
+  date: string
+  date_kind: DateKind
+  season_number: number | null
+  episode_number: number | null
+  has_file: boolean
+  monitored: boolean
+  overview: string | null
+  runtime_minutes: number | null
+  poster: string | null
+}
+
+export interface CalendarResponse {
+  start: string
+  end: string
+  entries: CalendarEntry[]
+  failures: ServiceFailure[]
+}
+
+export interface LibraryItem {
+  service_id: number | null
+  service_type: string
+  service_name: string
+  media_kind: string
+  item_id: number
+  title: string
+  sort_title: string | null
+  year: number | null
+  overview: string | null
+  poster: string | null
+  status: string | null
+  monitored: boolean
+  path: string | null
+  quality_profile_id: number | null
+  size_bytes: number
+  added: string | null
+  genres: string[]
+  runtime_minutes: number | null
+  network: string | null
+  studio: string | null
+  remote_id: string | null
+  have_count: number
+  total_count: number
+}
+
+export interface Episode {
+  id: number
+  season_number: number
+  episode_number: number
+  title: string | null
+  air_date: string | null
+  has_file: boolean
+  monitored: boolean
+  runtime_minutes: number | null
+  size_bytes: number
+  overview: string | null
+}
+
+export interface Season {
+  season_number: number
+  monitored: boolean
+  episode_count: number
+  episode_file_count: number
+  size_bytes: number
+  episodes: Episode[]
+}
+
+export interface LibraryDetail {
+  item: LibraryItem
+  seasons: Season[]
+  native_url: string | null
+}
+
+export interface DiscoverResult {
+  tmdb_id: number
+  media_kind: 'movie' | 'tv'
+  title: string
+  year: number | null
+  overview: string | null
+  poster_url: string | null
+  backdrop_url: string | null
+  vote_average: number | null
+  media_status: number | null
+  already_requested: boolean
+  available: boolean
+}
+
+export interface DiscoverPage {
+  page: number
+  total_pages: number
+  total_results: number
+  results: DiscoverResult[]
+}
+
+export interface MediaRequest {
+  id: number
+  media_kind: string
+  status: number
+  title: string | null
+  year: number | null
+  poster_url: string | null
+  tmdb_id: number | null
+  requested_by: string | null
+  requested_by_id: number | null
+  created_at: string | null
+  media_status: number | null
+}
+
+export interface Capabilities {
+  backend: string | null
+  available: boolean
+  can_request: boolean
+  message: string | null
+}
+
+export interface JellyseerrUser {
+  id: number
+  display_name: string
+  email: string | null
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -179,16 +344,102 @@ export const api = {
     }),
 
   users: () => request<User[]>('/api/users'),
-  createUser: (data: { username: string; password: string; role: Role }) =>
+  createUser: (data: { username: string; password: string; role: Role; jellyseerr_user_id?: number | null }) =>
     request<User>('/api/users', { method: 'POST', ...body(data) }),
   updateUser: (id: number, data: Record<string, unknown>) =>
     request<User>(`/api/users/${id}`, { method: 'PATCH', ...body(data) }),
   deleteUser: (id: number) => request<void>(`/api/users/${id}`, { method: 'DELETE' }),
 
-  requestCapabilities: () =>
-    request<{ message: string; can_submit: boolean; discovery_available: boolean }>(
-      '/api/requests/capabilities',
+  // ----------------------------------------------------------- unified views
+
+  calendar: (daysBack = 7, daysForward = 28) =>
+    request<CalendarResponse>(
+      `/api/calendar?days_back=${daysBack}&days_forward=${daysForward}`,
     ),
+
+  library: (mediaKind?: string) =>
+    request<{ items: LibraryItem[]; failures: ServiceFailure[] }>(
+      `/api/library${mediaKind ? `?media_kind=${encodeURIComponent(mediaKind)}` : ''}`,
+    ),
+  libraryItem: (serviceId: number, itemId: number) =>
+    request<LibraryDetail>(`/api/library/${serviceId}/${itemId}`),
+  setMonitored: (serviceId: number, itemId: number, monitored: boolean) =>
+    request<LibraryItem>(`/api/library/${serviceId}/${itemId}/monitor`, {
+      method: 'POST',
+      ...body({ monitored }),
+    }),
+  setSeasonMonitored: (
+    serviceId: number,
+    itemId: number,
+    seasonNumber: number,
+    monitored: boolean,
+  ) =>
+    request<LibraryItem>(`/api/library/${serviceId}/${itemId}/season-monitor`, {
+      method: 'POST',
+      ...body({ season_number: seasonNumber, monitored }),
+    }),
+  searchItem: (serviceId: number, itemId: number) =>
+    request<{ status: string }>(`/api/library/${serviceId}/${itemId}/search`, {
+      method: 'POST',
+    }),
+  deleteItem: (serviceId: number, itemId: number, deleteFiles = false) =>
+    request<void>(
+      `/api/library/${serviceId}/${itemId}?delete_files=${deleteFiles}`,
+      { method: 'DELETE' },
+    ),
+
+  queue: () =>
+    request<{ items: QueueItemT[]; failures: ServiceFailure[] }>('/api/activity/queue'),
+  history: (pageSize = 50) =>
+    request<{ items: HistoryItemT[]; failures: ServiceFailure[] }>(
+      `/api/activity/history?page_size=${pageSize}`,
+    ),
+  wanted: () =>
+    request<{ items: LibraryItem[]; failures: ServiceFailure[] }>('/api/activity/wanted'),
+
+  discoverCapabilities: () => request<Capabilities>('/api/discover/capabilities'),
+  discoverSearch: (q: string, page = 1) =>
+    request<DiscoverPage>(
+      `/api/discover/search?q=${encodeURIComponent(q)}&page=${page}`,
+    ),
+  discoverFeed: (kind = 'trending', page = 1) =>
+    request<DiscoverPage>(`/api/discover/feed?kind=${kind}&page=${page}`),
+  createRequest: (tmdbId: number, mediaKind: 'movie' | 'tv') =>
+    request<MediaRequest>('/api/discover/request', {
+      method: 'POST',
+      ...body({ tmdb_id: tmdbId, media_kind: mediaKind }),
+    }),
+  requests: (mineOnly = false) =>
+    request<MediaRequest[]>(`/api/discover/requests?mine_only=${mineOnly}`),
+  decideRequest: (requestId: number, approve: boolean) =>
+    request<MediaRequest>(
+      `/api/discover/requests/${requestId}/decide?approve=${approve}`,
+      { method: 'POST' },
+    ),
+  jellyseerrUsers: () => request<JellyseerrUser[]>('/api/discover/users'),
+}
+
+/** Poster URL for an *arr-hosted cover, routed through Mastarr's proxy. */
+export function posterUrl(serviceId: number | null, poster: string | null): string | null {
+  if (!poster || serviceId === null) return null
+  // Jellyseerr posters are already absolute TMDB CDN URLs — never proxy those.
+  if (poster.startsWith('http')) return poster
+  return `/api/images/${serviceId}/${poster}`
+}
+
+/** Jellyseerr's mediaInfo.status vocabulary. */
+export const MEDIA_STATUS: Record<number, string> = {
+  1: 'Unknown',
+  2: 'Pending',
+  3: 'Processing',
+  4: 'Partially available',
+  5: 'Available',
+}
+
+export const REQUEST_STATUS: Record<number, string> = {
+  1: 'Pending',
+  2: 'Approved',
+  3: 'Declined',
 }
 
 export function formatBytes(bytes: number): string {

@@ -21,19 +21,38 @@ break it.
 
 ## Status
 
-Build priorities **1 and 2 are complete**:
+Build priorities **1, 2, 3 and 6 are complete**:
 
 | # | Feature | Status |
 |---|---------|--------|
 | 1 | Adapter layer, auto-discovery, health dashboard | ✅ Done |
 | 2 | Auth + two-role model with a permission seam | ✅ Done |
-| 3 | Unified queue / history / activity views | Planned |
+| 3 | Unified queue / history / missing views | ✅ Done |
 | 4 | Cross-stack config push (profiles, root folders, clients) | Planned |
 | 5 | Indexer management via Prowlarr | Planned |
-| 6 | Requests via `OverseerrAdapter` | Planned |
-| 7 | Setup wizard + declarative YAML | Partial — YAML config works, wizard planned |
+| 6 | Requests via Jellyseerr / Overseerr | ✅ Done |
+| 7 | Setup wizard + declarative YAML | Partial — YAML works, wizard planned |
 
-Currently supported service types: **Sonarr**, **Radarr**, **Prowlarr** (health/status).
+Beyond the original list: a **unified calendar** and a **unified library** with everyday
+management (monitor, season toggles, search, delete).
+
+Supported service types: **Sonarr**, **Radarr**, **Lidarr**, **Readarr**, **Prowlarr**
+(health/status), **Jellyseerr/Overseerr**.
+
+> Lidarr and Readarr are unit-tested against recorded fixtures only — neither was installed
+> on the stack this was developed against, so they have not been exercised live.
+
+## What it actually does
+
+- **Library** — every series and movie in one poster grid, with a shows/movies toggle,
+  instant search, sort and filters. Open anything to see seasons and episodes, toggle
+  monitoring per season, trigger a search, or remove it.
+- **Calendar** — Sonarr episodes and Radarr releases on one timeline. Radarr's three
+  release dates collapse to the one that matters, labelled.
+- **Discover** — Jellyseerr-backed search and trending, with one-click requests.
+- **Requests** — admins approve or decline; requesters see only their own.
+- **Activity** — the download queue, recent history, and everything still missing.
+- **Services** — health, versions, disk usage, and connection management.
 
 ## Quickstart
 
@@ -86,8 +105,8 @@ The port is only ever a **hint** used to guess which API version to try first. A
 8989 reporting `appName: Radarr` is treated as Radarr.
 
 > **The API version is per-service.** Sonarr and Radarr are on `/api/v3`; **Prowlarr,
-> Lidarr and Readarr are on `/api/v1`**. Mastarr parameterizes this per adapter, so mixed
-> stacks work transparently.
+> Lidarr, Readarr and Jellyseerr are all on `/api/v1`**. Mastarr parameterizes this per
+> adapter, so mixed stacks work transparently.
 
 ## Configuration
 

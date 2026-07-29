@@ -3,7 +3,18 @@
 from fastapi import APIRouter
 
 from .. import __version__
-from . import auth, dashboard, discovery, requests, services, users
+from . import (
+    activity,
+    auth,
+    calendar,
+    dashboard,
+    discover,
+    discovery,
+    images,
+    library,
+    services,
+    users,
+)
 
 api_router = APIRouter(prefix="/api")
 
@@ -23,6 +34,10 @@ api_router.include_router(users.router)
 api_router.include_router(services.router)
 api_router.include_router(discovery.router)
 api_router.include_router(dashboard.router)
-api_router.include_router(requests.router)
+api_router.include_router(calendar.router)
+api_router.include_router(library.router)
+api_router.include_router(activity.router)
+api_router.include_router(discover.router)
+api_router.include_router(images.router)
 
 __all__ = ["api_router"]

@@ -10,14 +10,22 @@ from __future__ import annotations
 from typing import Type
 
 from .base import ArrAdapter
+from .jellyseerr import JellyseerrAdapter
+from .lidarr import LidarrAdapter
 from .prowlarr import ProwlarrAdapter
 from .radarr import RadarrAdapter
+from .readarr import ReadarrAdapter
 from .sonarr import SonarrAdapter
 
+# Adding a service type is one import plus one line here. Nothing else in the codebase
+# should need to know the type exists.
 ADAPTERS: dict[str, Type[ArrAdapter]] = {
     SonarrAdapter.service_type: SonarrAdapter,
     RadarrAdapter.service_type: RadarrAdapter,
+    LidarrAdapter.service_type: LidarrAdapter,
+    ReadarrAdapter.service_type: ReadarrAdapter,
     ProwlarrAdapter.service_type: ProwlarrAdapter,
+    JellyseerrAdapter.service_type: JellyseerrAdapter,
 }
 
 
@@ -67,6 +75,7 @@ def describe_types() -> list[dict[str, object]]:
             "api_version": cls.api_version,
             "default_port": cls.default_port,
             "manages_media": cls.media_endpoint is not None,
+            "media_kind": cls.media_kind,
             "unsupported": sorted(cls.unsupported),
         }
         for name, cls in sorted(ADAPTERS.items())

@@ -151,6 +151,10 @@ async def test_identify_finds_a_v1_service_on_a_nonstandard_port():
     respx.get("http://host.test:9999/api/v3/system/status").mock(
         return_value=httpx.Response(404)
     )
+    # Jellyseerr shares the v1 prefix but a different status path; identify walks past it.
+    respx.get("http://host.test:9999/api/v1/status").mock(
+        return_value=httpx.Response(404)
+    )
     respx.get("http://host.test:9999/api/v1/system/status").mock(
         return_value=httpx.Response(200, json=fx.PROWLARR_STATUS)
     )

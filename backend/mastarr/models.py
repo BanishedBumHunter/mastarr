@@ -57,6 +57,11 @@ class User(SQLModel, table=True):
     # sessions are invalidated without needing a server-side session table.
     token_epoch: int = 0
 
+    # Maps this account onto a Jellyseerr user, so requests are attributed to the right
+    # person and "my requests" is a real server-side filter rather than a client-side
+    # pretence. Unmapped users fall back to whoever owns the API key.
+    jellyseerr_user_id: Optional[int] = None
+
 
 class SchemaVersion(SQLModel, table=True):
     """Standing in for Alembic while the project is INACTIVE. See CLAUDE.md."""

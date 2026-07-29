@@ -38,6 +38,7 @@ def _user_out(user: User) -> UserOut:
         role=user.role,
         is_active=user.is_active,
         created_at=user.created_at,
+        jellyseerr_user_id=user.jellyseerr_user_id,
     )
 
 

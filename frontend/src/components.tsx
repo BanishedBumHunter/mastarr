@@ -2,7 +2,7 @@
 
 import type { ReactNode } from 'react'
 import { STATUS_LABEL, formatBytes } from './api'
-import type { DiskSpace, HealthIssue, ServiceStatus } from './api'
+import type { DiskSpace, HealthIssue, ServiceFailure, ServiceStatus } from './api'
 
 export function StatusBadge({ status }: { status: ServiceStatus }) {
   return <span className={`badge ${status}`}>{STATUS_LABEL[status]}</span>
@@ -89,6 +89,46 @@ export function Empty({
     <div className="empty">
       <h2>{title}</h2>
       <div className="subtle">{children}</div>
+    </div>
+  )
+}
+
+export function PartialWarning({ failures }: { failures: ServiceFailure[] }) {
+  /**
+   * Says which service is missing from an aggregated view.
+   *
+   * Silently showing partial data would be worse than an error: the user would believe
+   * their library really is that small, or that nothing is scheduled.
+   */
+  if (!failures.length) return null
+  return (
+    <div className="hint-box" style={{ marginBottom: 14 }}>
+      <b>Showing partial results.</b>{' '}
+      {failures.map((f) => `${f.service_name} (${f.error})`).join(' · ')}
+    </div>
+  )
+}
+
+export function ProgressBar({
+  value,
+  total,
+  label,
+}: {
+  value: number
+  total: number
+  label?: string
+}) {
+  const percent = total > 0 ? Math.min((value / total) * 100, 100) : 0
+  const tone = percent >= 100 ? '' : percent > 0 ? 'warn' : 'danger'
+  return (
+    <div className="disk">
+      <div className="disk-head">
+        <span>{label ?? `${value}/${total}`}</span>
+        <span>{Math.round(percent)}%</span>
+      </div>
+      <div className="bar">
+        <div className={`bar-fill ${tone}`} style={{ width: `${percent}%` }} />
+      </div>
     </div>
   )
 }

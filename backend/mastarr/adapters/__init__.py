@@ -8,8 +8,11 @@ from .errors import (
     ServiceUnreachable,
     UnsupportedOperation,
 )
+from .jellyseerr import JellyseerrAdapter
+from .lidarr import LidarrAdapter
 from .prowlarr import ProwlarrAdapter
 from .radarr import RadarrAdapter
+from .readarr import ReadarrAdapter
 from .registry import (
     ADAPTERS,
     UnknownServiceType,
@@ -21,15 +24,24 @@ from .registry import (
     type_for_app_name,
 )
 from .schemas import (
+    CalendarEntry,
+    DateKind,
+    DiscoverPage,
+    DiscoverResult,
     DiskSpace,
     DownloadClient,
     HealthIssue,
     HealthSeverity,
+    Episode,
     HistoryItem,
     Indexer,
+    LibraryDetail,
+    LibraryItem,
+    MediaRequest,
     QualityProfile,
     QueueItem,
     RootFolder,
+    Season,
     SearchResult,
     ServiceSnapshot,
     ServiceStatus,
@@ -39,6 +51,18 @@ from .sonarr import SonarrAdapter
 
 __all__ = [
     "ADAPTERS",
+    "CalendarEntry",
+    "DateKind",
+    "DiscoverPage",
+    "DiscoverResult",
+    "Episode",
+    "JellyseerrAdapter",
+    "LibraryDetail",
+    "LibraryItem",
+    "LidarrAdapter",
+    "MediaRequest",
+    "ReadarrAdapter",
+    "Season",
     "AdapterError",
     "ArrAdapter",
     "DiskSpace",

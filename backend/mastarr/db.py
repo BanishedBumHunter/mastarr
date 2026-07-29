@@ -11,7 +11,7 @@ from .config import Settings, get_settings
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _engine = None
 
@@ -46,11 +46,33 @@ def init_db(settings: Settings | None = None) -> None:
             session.add(models.SchemaVersion(version=SCHEMA_VERSION))
             session.commit()
         elif existing.version != SCHEMA_VERSION:
-            log.warning(
-                "Database schema version %s does not match expected %s",
-                existing.version,
-                SCHEMA_VERSION,
-            )
+            # Migrations are additive-only while the project is INACTIVE (see CLAUDE.md).
+            # create_all above adds new tables but never new columns, so additive column
+            # changes are applied here explicitly until Alembic lands.
+            _apply_additive_migrations(session, existing.version)
+            existing.version = SCHEMA_VERSION
+            session.add(existing)
+            session.commit()
+            log.info("Database schema upgraded to version %s", SCHEMA_VERSION)
+
+
+def _apply_additive_migrations(session: Session, from_version: int) -> None:
+    """Add columns that `create_all` cannot add to an existing table.
+
+    Deliberately minimal and additive-only: no drops, no renames, no data rewrites. If a
+    change ever needs more than this, that is the signal to adopt Alembic rather than to
+    grow this function.
+    """
+    from sqlalchemy import text
+
+    if from_version < 2:
+        columns = {
+            row[1]
+            for row in session.exec(text("PRAGMA table_info(user)")).all()  # type: ignore[arg-type]
+        }
+        if "jellyseerr_user_id" not in columns:
+            session.exec(text("ALTER TABLE user ADD COLUMN jellyseerr_user_id INTEGER"))  # type: ignore[arg-type]
+            log.info("Added user.jellyseerr_user_id")
 
 
 def get_session() -> Iterator[Session]:

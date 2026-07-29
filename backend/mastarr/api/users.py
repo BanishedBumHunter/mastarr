@@ -25,6 +25,7 @@ def _user_out(user: User) -> UserOut:
         role=user.role,
         is_active=user.is_active,
         created_at=user.created_at,
+        jellyseerr_user_id=user.jellyseerr_user_id,
     )
 
 
@@ -48,6 +49,7 @@ async def create_user(
         username=username,
         password_hash=hash_password(body.password),
         role=body.role,
+        jellyseerr_user_id=body.jellyseerr_user_id,
     )
     session.add(user)
     session.commit()
@@ -75,6 +77,10 @@ async def update_user(
         _guard_last_admin(session, user, "change the role of")
         user.role = body.role
         user.token_epoch += 1
+
+    if body.jellyseerr_user_id is not None:
+        # 0 means "unlink" — the field is nullable and 0 is never a valid Jellyseerr id.
+        user.jellyseerr_user_id = body.jellyseerr_user_id or None
 
     if body.is_active is not None and body.is_active != user.is_active:
         if not body.is_active:

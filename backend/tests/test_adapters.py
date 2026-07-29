@@ -35,15 +35,23 @@ PROWLARR_URL = "http://prowlarr.test:9696"
 # ------------------------------------------------------------------- registry
 
 
-def test_registry_knows_all_three_types():
-    assert set(known_types()) == {"sonarr", "radarr", "prowlarr"}
+def test_registry_knows_every_registered_type():
+    assert set(known_types()) == {
+        "sonarr",
+        "radarr",
+        "lidarr",
+        "readarr",
+        "prowlarr",
+        "jellyseerr",
+    }
 
 
 def test_api_versions_are_per_service_not_assumed():
-    """The core generalization: Prowlarr is v1 while Sonarr/Radarr are v3."""
+    """The core generalization: only Sonarr and Radarr are v3; everything else is v1."""
     assert get_adapter_class("sonarr").api_version == "v3"
     assert get_adapter_class("radarr").api_version == "v3"
-    assert get_adapter_class("prowlarr").api_version == "v1"
+    for v1_type in ("prowlarr", "lidarr", "readarr", "jellyseerr"):
+        assert get_adapter_class(v1_type).api_version == "v1", v1_type
 
 
 def test_api_base_reflects_the_version():
@@ -51,8 +59,15 @@ def test_api_base_reflects_the_version():
     assert build_adapter("prowlarr", PROWLARR_URL).api_base == f"{PROWLARR_URL}/api/v1"
 
 
-def test_default_ports_match_the_live_stack():
-    assert default_ports() == {8989: "sonarr", 7878: "radarr", 9696: "prowlarr"}
+def test_default_ports_match_upstream_defaults():
+    assert default_ports() == {
+        8989: "sonarr",
+        7878: "radarr",
+        8686: "lidarr",
+        8787: "readarr",
+        9696: "prowlarr",
+        5055: "jellyseerr",
+    }
 
 
 def test_app_name_resolves_to_type():

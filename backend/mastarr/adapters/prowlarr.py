@@ -27,6 +27,21 @@ class ProwlarrAdapter(ArrAdapter):
     app_name: ClassVar[str] = "prowlarr"
     media_endpoint: ClassVar[str | None] = None
 
+    # Verified against a live Prowlarr 2.5: every one of these 404s. Declaring them
+    # up front matters — otherwise each aggregated view (calendar, library, wanted)
+    # collects a "Prowlarr failed" warning on every page load, and a warning that is
+    # always present is a warning people learn to ignore.
     unsupported: ClassVar[frozenset[str]] = frozenset(
-        {"disk_space", "queue", "quality_profiles", "root_folders", "search"}
+        {
+            "disk_space",
+            "queue",
+            "quality_profiles",
+            "root_folders",
+            "search",
+            "calendar",
+            "library",
+            "wanted_missing",
+            "seasons",
+            "search_command",
+        }
     )

@@ -30,15 +30,19 @@ from .errors import (
     UnsupportedOperation,
 )
 from .schemas import (
+    CalendarEntry,
     DiskSpace,
     DownloadClient,
+    Episode,
     HealthIssue,
     HealthSeverity,
     HistoryItem,
     Indexer,
+    LibraryItem,
     QualityProfile,
     QueueItem,
     RootFolder,
+    Season,
     SearchResult,
     ServiceSnapshot,
     ServiceStatus,
@@ -46,6 +50,14 @@ from .schemas import (
 )
 
 log = logging.getLogger(__name__)
+
+# Health checks that report as `warning` but describe no operational problem.
+#
+# Sonarr and Radarr raise `UpdateCheck` at warning severity whenever a newer release
+# exists — which is most of the time. Letting that drive DEGRADED would leave the
+# dashboard permanently amber and make the status colour meaningless. The issue is still
+# listed on the card; it just doesn't change the verdict.
+INFORMATIONAL_HEALTH_SOURCES = frozenset({"UpdateCheck"})
 
 
 class ArrAdapter(ABC):
@@ -66,6 +78,14 @@ class ArrAdapter(ABC):
     media_endpoint: ClassVar[str | None] = None
     # Endpoints this type does not implement, mapped to why. Checked before any request.
     unsupported: ClassVar[frozenset[str]] = frozenset()
+    # What this type calls its items in the unified UI.
+    media_kind: ClassVar[str] = "item"
+    # Extra query params the calendar endpoint needs (Sonarr wants the series expanded).
+    calendar_params: ClassVar[dict[str, str]] = {}
+    # The *arr command that searches for one item, e.g. "MoviesSearch".
+    search_command: ClassVar[str] = ""
+    # Path fragment in the native UI, for deep links.
+    native_path: ClassVar[str] = ""
 
     def __init__(
         self,
@@ -358,6 +378,146 @@ class ArrAdapter(ABC):
             return []
         return [self._parse_search_result(item) for item in data]
 
+    # --------------------------------------------------------- unified views
+
+    async def calendar(self, start: datetime, end: datetime) -> list[CalendarEntry]:
+        """Dated items in a window, normalized onto one timeline."""
+        self._guard("calendar")
+        data = await self._request(
+            "GET",
+            "calendar",
+            params={
+                "start": start.date().isoformat(),
+                "end": end.date().isoformat(),
+                **self.calendar_params,
+            },
+        )
+        if not isinstance(data, list):
+            return []
+        entries: list[CalendarEntry] = []
+        for item in data:
+            entries.extend(self._parse_calendar_item(item))
+        return entries
+
+    async def library(self) -> list[LibraryItem]:
+        """The whole library.
+
+        Deliberately unpaged: the *arrs return everything in one call and real libraries
+        here are hundreds of items, not millions. Paging would add complexity and make
+        client-side search worse.
+        """
+        self._guard("library")
+        if self.media_endpoint is None:
+            raise UnsupportedOperation(
+                f"{self.display_name} manages no media library.", service=self.name
+            )
+        data = await self._request("GET", self.media_endpoint)
+        if not isinstance(data, list):
+            return []
+        return [self._parse_library_item(item) for item in data]
+
+    async def library_item(self, item_id: int) -> LibraryItem:
+        self._guard("library")
+        if self.media_endpoint is None:
+            raise UnsupportedOperation(
+                f"{self.display_name} manages no media library.", service=self.name
+            )
+        data = await self._request("GET", f"{self.media_endpoint}/{item_id}")
+        if not isinstance(data, dict):
+            raise ServiceError("Unexpected library payload.", service=self.name)
+        return self._parse_library_item(data)
+
+    async def seasons(self, item_id: int) -> list[Season]:
+        """Season/episode breakdown. Only meaningful for episodic services."""
+        self._guard("seasons")
+        return []
+
+    async def wanted_missing(self, page_size: int = 50) -> list[LibraryItem]:
+        self._guard("wanted_missing")
+        data = await self._request(
+            "GET", "wanted/missing", params={"pageSize": page_size}
+        )
+        records = data.get("records", []) if isinstance(data, dict) else (data or [])
+        return [self._parse_library_item(item) for item in records]
+
+    # ------------------------------------------------------- write operations
+
+    async def set_monitored(self, item_id: int, monitored: bool) -> LibraryItem:
+        """Toggle monitoring.
+
+        The *arrs have no PATCH for this — you GET the whole record, change the field and
+        PUT it back. Round-tripping the untouched payload is what keeps us from silently
+        clobbering fields we don't model.
+        """
+        self._guard("library")
+        if self.media_endpoint is None:
+            raise UnsupportedOperation(
+                f"{self.display_name} manages no media library.", service=self.name
+            )
+        record = await self._request("GET", f"{self.media_endpoint}/{item_id}")
+        if not isinstance(record, dict):
+            raise ServiceError("Unexpected library payload.", service=self.name)
+        record["monitored"] = monitored
+        updated = await self._request(
+            "PUT", f"{self.media_endpoint}/{item_id}", json=record
+        )
+        return self._parse_library_item(updated if isinstance(updated, dict) else record)
+
+    async def set_season_monitored(
+        self, item_id: int, season_number: int, monitored: bool
+    ) -> LibraryItem:
+        self._guard("seasons")
+        raise UnsupportedOperation(
+            f"{self.display_name} has no seasons.", service=self.name
+        )
+
+    async def trigger_search(self, item_id: int) -> str:
+        """Ask the service to go looking for this item now."""
+        self._guard("search_command")
+        payload = self._search_command_payload(item_id)
+        result = await self._request("POST", "command", json=payload)
+        if isinstance(result, dict):
+            return str(result.get("status") or "queued")
+        return "queued"
+
+    async def delete_item(self, item_id: int, delete_files: bool = False) -> None:
+        self._guard("library")
+        if self.media_endpoint is None:
+            raise UnsupportedOperation(
+                f"{self.display_name} manages no media library.", service=self.name
+            )
+        await self._request(
+            "DELETE",
+            f"{self.media_endpoint}/{item_id}",
+            params={
+                "deleteFiles": str(delete_files).lower(),
+                "addImportListExclusion": "false",
+            },
+        )
+
+    async def image_bytes(self, path: str) -> tuple[bytes, str]:
+        """Fetch a poster/banner for the image proxy. Returns (body, content-type)."""
+        client = await self._get_client()
+        headers = {}
+        if self.api_key:
+            headers["X-Api-Key"] = self.api_key
+        url = f"{self.url}/{path.lstrip('/')}"
+        try:
+            response = await client.get(url, headers=headers)
+        except httpx.HTTPError as exc:
+            raise ServiceUnreachable(
+                f"Could not fetch image from {self.url}", service=self.name
+            ) from exc
+        if response.status_code >= 400:
+            raise ServiceError(
+                f"Image request returned HTTP {response.status_code}", service=self.name
+            )
+        return response.content, response.headers.get("content-type", "image/jpeg")
+
+    def native_url(self, item_id: int) -> str | None:
+        """Deep link into the service's own UI, for what Mastarr doesn't reimplement."""
+        return self.url
+
     async def snapshot(self) -> ServiceSnapshot:
         """One total, never-raising view of this service for the dashboard.
 
@@ -392,6 +552,7 @@ class ArrAdapter(ABC):
             log.debug("health check failed for %s: %s", self.name, exc.message)
         if any(
             issue.severity in (HealthSeverity.WARNING, HealthSeverity.ERROR)
+            and issue.source not in INFORMATIONAL_HEALTH_SOURCES
             for issue in base.health_issues
         ):
             base.status = ServiceStatus.DEGRADED
@@ -481,6 +642,66 @@ class ArrAdapter(ABC):
     def _remote_id(self, item: dict[str, Any]) -> str | None:
         """The external database id this service keys on — tvdbId, tmdbId, and so on."""
         return None
+
+    # ------------------------------------------- unified-view parsing overrides
+
+    def _poster_path(self, item: dict[str, Any]) -> str | None:
+        """Service-relative poster path, for the image proxy.
+
+        Prefers the local `/MediaCover/...` URL over `remoteUrl`: it is already cached by
+        the service, so it loads fast and keeps working if TMDB is unreachable.
+        """
+        for image in item.get("images", []) or []:
+            if image.get("coverType") != "poster":
+                continue
+            local = image.get("url")
+            if local:
+                return str(local).lstrip("/")
+            remote = image.get("remoteUrl")
+            if remote:
+                return str(remote)
+        return None
+
+    def _parse_calendar_item(self, item: dict[str, Any]) -> list[CalendarEntry]:
+        """One raw calendar record -> zero or more normalized entries.
+
+        Returns a list because a Radarr movie can legitimately produce several dated
+        events (cinema, digital, physical) from a single record.
+        """
+        return []
+
+    def _parse_library_item(self, item: dict[str, Any]) -> LibraryItem:
+        raise NotImplementedError(
+            f"{type(self).__name__} must implement _parse_library_item"
+        )
+
+    def _search_command_payload(self, item_id: int) -> dict[str, Any]:
+        raise UnsupportedOperation(
+            f"{self.display_name} has no search command.", service=self.name
+        )
+
+    def _base_library_fields(self, item: dict[str, Any]) -> dict[str, Any]:
+        """Fields every *arr library record shares, so subclasses only add differences."""
+        return {
+            "service_id": self.service_id,
+            "service_type": self.service_type,
+            "service_name": self.name,
+            "media_kind": self.media_kind,
+            "item_id": item.get("id", 0),
+            "title": item.get("title") or "",
+            "sort_title": item.get("sortTitle"),
+            "year": item.get("year") or None,
+            "overview": item.get("overview"),
+            "poster": self._poster_path(item),
+            "status": item.get("status"),
+            "monitored": bool(item.get("monitored", True)),
+            "path": item.get("path"),
+            "quality_profile_id": item.get("qualityProfileId"),
+            "added": self._parse_dt(item.get("added")),
+            "genres": item.get("genres") or [],
+            "runtime_minutes": item.get("runtime"),
+            "remote_id": self._remote_id(item),
+        }
 
 
 _STATUS_MAP = {

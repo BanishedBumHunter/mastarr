@@ -9,7 +9,11 @@
 
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from './auth'
+import Activity from './pages/Activity'
+import Calendar from './pages/Calendar'
 import Dashboard from './pages/Dashboard'
+import Discover from './pages/Discover'
+import Library from './pages/Library'
 import Login from './pages/Login'
 import Requests from './pages/Requests'
 import Services from './pages/Services'
@@ -50,14 +54,24 @@ function AdminApp() {
     <div className="app">
       <TopBar
         links={[
-          { to: '/', label: 'Dashboard' },
-          { to: '/services', label: 'Services' },
-          { to: '/users', label: 'Users' },
+          { to: '/', label: 'Library' },
+          { to: '/calendar', label: 'Calendar' },
+          { to: '/discover', label: 'Discover' },
+          { to: '/requests', label: 'Requests' },
+          { to: '/activity', label: 'Activity' },
+          { to: '/dashboard', label: 'Services' },
         ]}
       />
       <main className="content">
         <Routes>
-          <Route path="/" element={<Dashboard />} />
+          {/* Library is the landing page: it's what you actually came to look at.
+              The old status dashboard moves to /dashboard alongside service config. */}
+          <Route path="/" element={<Library />} />
+          <Route path="/calendar" element={<Calendar />} />
+          <Route path="/discover" element={<Discover />} />
+          <Route path="/requests" element={<Requests />} />
+          <Route path="/activity" element={<Activity />} />
+          <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/services" element={<Services />} />
           <Route path="/users" element={<Users />} />
           <Route path="*" element={<Navigate to="/" replace />} />
@@ -70,11 +84,19 @@ function AdminApp() {
 function RequesterApp() {
   return (
     <div className="app">
-      <TopBar links={[{ to: '/', label: 'Requests' }]} />
+      <TopBar
+        links={[
+          { to: '/', label: 'Discover' },
+          { to: '/requests', label: 'My requests' },
+          { to: '/calendar', label: 'Calendar' },
+        ]}
+      />
       <main className="content">
         <Routes>
-          <Route path="/" element={<Requests />} />
-          {/* No admin routes exist in this tree at all. */}
+          <Route path="/" element={<Discover />} />
+          <Route path="/requests" element={<Requests />} />
+          <Route path="/calendar" element={<Calendar />} />
+          {/* No admin routes exist in this tree at all — not hidden, absent. */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

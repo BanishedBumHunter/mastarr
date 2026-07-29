@@ -25,18 +25,22 @@ class UserOut(BaseModel):
     role: Role
     is_active: bool
     created_at: datetime
+    # Which Jellyseerr account this user's requests are attributed to.
+    jellyseerr_user_id: int | None = None
 
 
 class CreateUserRequest(BaseModel):
     username: str = Field(min_length=3, max_length=64)
     password: str = Field(min_length=8, max_length=256)
     role: Role = Role.REQUESTER
+    jellyseerr_user_id: int | None = None
 
 
 class UpdateUserRequest(BaseModel):
     password: str | None = Field(default=None, min_length=8, max_length=256)
     role: Role | None = None
     is_active: bool | None = None
+    jellyseerr_user_id: int | None = None
 
 
 class AuthState(BaseModel):
