@@ -25,10 +25,46 @@ log = logging.getLogger(__name__)
 FRONTEND_DIR = Path(__file__).resolve().parent / "static"
 
 
+def _preflight_data_dir(settings) -> None:
+    """Fail with an actionable message when the data volume isn't writable.
+
+    Without this the first symptom is SQLAlchemy's `unable to open database file`, which
+    reads like a database bug rather than "your mounted directory is owned by the wrong
+    uid". That is by far the most common install failure, so it is worth catching by name.
+    """
+    import os
+
+    data_dir = settings.data_dir
+    try:
+        data_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise RuntimeError(
+            f"Cannot create the data directory {data_dir}: {exc}.\n"
+            f"Mastarr runs as uid {os.getuid()}. Give that user ownership of the "
+            f"directory you mounted at {data_dir} — e.g. "
+            f"`chown -R {os.getuid()}:{os.getgid()} /path/to/your/mastarr/config` on the "
+            f"host — or set `user:` in your compose file to a uid that already owns it."
+        ) from exc
+
+    probe = data_dir / ".write-test"
+    try:
+        probe.write_text("ok")
+        probe.unlink()
+    except OSError as exc:
+        raise RuntimeError(
+            f"The data directory {data_dir} is not writable: {exc}.\n"
+            f"Mastarr runs as uid {os.getuid()}:{os.getgid()}. Either give that user "
+            f"ownership of the host directory you mounted there — e.g. "
+            f"`chown -R {os.getuid()}:{os.getgid()} /path/to/your/mastarr/config` — or "
+            f"set `user: \"<uid>:<gid>\"` in your compose file to match the existing owner."
+        ) from exc
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
     configure_logging(settings.log_level)
+    _preflight_data_dir(settings)
     init_db(settings)
 
     with Session(get_engine()) as session:

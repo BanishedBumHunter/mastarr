@@ -1,0 +1,153 @@
+# ============================================================================
+#  Mastarr — TrueNAS SCALE custom app
+#  Paste this whole file into: Apps → Discover Apps → Custom App → Install via YAML
+# ============================================================================
+#
+#  BEFORE YOU PASTE, change the five things marked  <<< CHANGE ME >>>
+#
+#    1. image:            your GitHub username (or leave the local-image variant)
+#    2. MASTARR_SECRET_KEY   generate it — see below
+#    3. MASTARR_JWT_SECRET   generate it — see below
+#    4. volumes:          your actual dataset path
+#    5. user:             the uid:gid that owns that dataset path
+#
+#  Generate the two secrets first, on any machine with Python and openssl:
+#
+#    python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+#    openssl rand -base64 48
+#
+#  Keep them somewhere safe. If you lose MASTARR_SECRET_KEY, every *arr API key
+#  Mastarr has stored becomes permanently unreadable and must be re-entered.
+# ============================================================================
+
+services:
+  mastarr:
+    # ------------------------------------------------------------------ 1. image
+    # Published by this repo's GitHub Actions workflow on every push to main.
+    # Make the GHCR package PUBLIC after the first build, or TrueNAS gets a 403.
+    image: ghcr.io/YOUR_GITHUB_USERNAME/mastarr:latest    # <<< CHANGE ME >>>
+    #
+    # Alternative — if you transferred the image manually with
+    # `docker save mastarr:latest | ssh user@nas 'docker load'`, use these two
+    # lines INSTEAD of the image line above:
+    #
+    #   image: mastarr:latest
+    #   pull_policy: never
+
+    restart: unless-stopped
+
+    # ------------------------------------------------------------------- 5. user
+    # Mastarr runs as uid 1000 by default. It only ever writes to /data, so any
+    # uid works — it just has to own the directory you mount below.
+    #
+    #   - TrueNAS "apps" user is typically  568:568
+    #   - A normal first user is typically 1000:1000
+    #
+    # Check what owns your dataset with:  ls -ln /mnt/YOURPOOL/apps
+    # Then either match it here, or chown the directory to 1000:1000 and delete
+    # this line. Getting this wrong is the #1 install failure — the app will
+    # refuse to start and tell you exactly which uid it needs.
+    user: "1000:1000"                                     # <<< CHANGE ME >>>
+
+    ports:
+      # host:container — 8770 is arbitrary; change the LEFT number only, and
+      # only if 8770 is already taken on your NAS.
+      - "8770:8000"
+
+    environment:
+      # Where Mastarr keeps its database and generated secrets. This is the
+      # in-container path — do not change it; change the volume mount instead.
+      MASTARR_DATA_DIR: /data
+
+      # ------------------------------------------------------- 2 & 3. secrets
+      # Encrypts stored *arr API keys at rest. Generate with the Fernet command
+      # at the top of this file.
+      MASTARR_SECRET_KEY: "PASTE_YOUR_FERNET_KEY_HERE"     # <<< CHANGE ME >>>
+      # Signs login sessions. Generate with `openssl rand -base64 48`.
+      MASTARR_JWT_SECRET: "PASTE_YOUR_RANDOM_STRING_HERE"  # <<< CHANGE ME >>>
+
+      # How long a login lasts before you have to sign in again.
+      MASTARR_SESSION_HOURS: "12"
+
+      # Timezone, so log timestamps match your NAS. e.g. Europe/London,
+      # America/New_York, Australia/Sydney
+      TZ: "UTC"
+
+      # How long to wait for a slow *arr before marking it unreachable.
+      MASTARR_HTTP_TIMEOUT: "10"
+
+      # INFO is right for normal use. Use DEBUG only when troubleshooting —
+      # API keys are redacted at every level, but DEBUG is noisy.
+      MASTARR_LOG_LEVEL: "INFO"
+
+      # OPTIONAL — pre-fills the "Scan" box on the Services page so you can just
+      # press the button. Use the LAN IP of whatever runs your *arr services;
+      # that is usually this same NAS. JSON array, quoted.
+      # MASTARR_DISCOVERY_HOSTS: '["192.168.1.10"]'
+
+      # OPTIONAL — declarative config. Only set this if you also mount the file
+      # under `volumes` below.
+      # MASTARR_CONFIG_FILE: /config/config.yml
+
+    # ---------------------------------------------------------------- 4. volumes
+    volumes:
+      # REQUIRED. Left side = a real directory on YOUR NAS. Right side is fixed.
+      #
+      # Create it first, e.g. via Datasets in the TrueNAS UI, or over SSH:
+      #   mkdir -p /mnt/YOURPOOL/apps/mastarr
+      #   chown -R 1000:1000 /mnt/YOURPOOL/apps/mastarr
+      #
+      # Holds the SQLite database and generated secrets. Back this up — it is
+      # the entire state of your Mastarr install.
+      - /mnt/YOURPOOL/apps/mastarr:/data                   # <<< CHANGE ME >>>
+
+      # OPTIONAL — declarative config file (see MASTARR_CONFIG_FILE above).
+      # Read-only, so Mastarr can never overwrite your version-controlled copy.
+      # - /mnt/YOURPOOL/apps/mastarr/config.yml:/config/config.yml:ro
+
+    # ----------------------------------------------------------------- networks
+    # A plain bridge network. Mastarr does NOT need to share a network with your
+    # *arr services — it reaches them over your LAN by URL and API key, exactly
+    # as your browser does. Each TrueNAS app gets its own compose project, so
+    # container names do not resolve between apps: address your services by IP
+    # (http://192.168.1.10:8989), not by name (http://sonarr:8989).
+    networks:
+      - mastarr
+
+    # Keeps container logs from slowly filling the dataset. A NAS app can run
+    # for months, and the default json-file driver has no size limit.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # The image ships its own healthcheck; this makes TrueNAS surface it.
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4).status==200 else 1)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+networks:
+  mastarr:
+    driver: bridge
+
+# ============================================================================
+#  AFTER INSTALLING
+#
+#  1. Browse to  http://YOUR_NAS_IP:8770
+#  2. The first screen creates your admin account. Do this immediately — it is
+#     open to anyone who reaches the page until a user exists.
+#  3. Services → enter your NAS/LAN IP → Scan. Mastarr finds *arr services
+#     without needing any API key.
+#  4. Paste each service's API key (in its own UI: Settings → General →
+#     Security → API Key) and press Add.
+#
+#  Cards flip from "Needs API key" to "Online" once a valid key is saved.
+# ============================================================================

@@ -96,3 +96,66 @@ def test_api_only_mode_when_no_frontend_is_bundled(isolated_env, monkeypatch):
     with TestClient(app) as client:
         assert client.get("/api/health").status_code == 200
         assert client.get("/").status_code == 404
+
+
+# ------------------------------------------------------- data dir preflight
+
+
+def test_preflight_accepts_a_writable_dir(isolated_env, tmp_path):
+    from mastarr.config import get_settings
+
+    main._preflight_data_dir(get_settings())  # must not raise
+
+
+def test_preflight_names_the_uid_when_the_dir_is_read_only(isolated_env, tmp_path, monkeypatch):
+    """The most common install failure must produce an actionable message.
+
+    Without this the first symptom is SQLAlchemy's 'unable to open database file', which
+    sends people looking for a database problem instead of a chown.
+    """
+    import os
+    import stat
+
+    import pytest
+
+    from mastarr.config import get_settings
+
+    if os.getuid() == 0:
+        pytest.skip("root bypasses file permissions, so this check cannot be exercised")
+
+    readonly = tmp_path / "readonly"
+    readonly.mkdir()
+    readonly.chmod(stat.S_IRUSR | stat.S_IXUSR)  # r-x, no write
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "data_dir", readonly)
+
+    try:
+        with pytest.raises(RuntimeError) as excinfo:
+            main._preflight_data_dir(settings)
+        message = str(excinfo.value)
+        assert "not writable" in message
+        assert str(os.getuid()) in message, "must name the uid the operator has to chown to"
+        assert "chown" in message
+    finally:
+        readonly.chmod(stat.S_IRWXU)  # so pytest can clean up
+
+
+def test_preflight_creates_a_missing_data_dir(isolated_env, tmp_path, monkeypatch):
+    from mastarr.config import get_settings
+
+    target = tmp_path / "nested" / "mastarr"
+    settings = get_settings()
+    monkeypatch.setattr(settings, "data_dir", target)
+
+    main._preflight_data_dir(settings)
+    assert target.is_dir()
+
+
+def test_preflight_leaves_no_probe_file_behind(isolated_env, tmp_path, monkeypatch):
+    from mastarr.config import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+    main._preflight_data_dir(settings)
+    assert not (tmp_path / ".write-test").exists()

@@ -1,235 +1,265 @@
 # Installing Mastarr on TrueNAS SCALE
 
-Written against a real target: **TrueNAS SCALE 25.10.2.1** at `192.168.1.250`, which already
-runs Sonarr, Radarr, Prowlarr and Seerr as apps, plus three custom (compose-based) apps.
+A complete walkthrough, from an empty repo to a running app. Written for TrueNAS SCALE
+24.10+ (tested against 25.10), where apps are Docker and custom apps are plain
+`docker compose`.
 
-TrueNAS custom apps are plain `docker compose` — the app description is literally *"a custom
-app where user can use his/her own docker compose file"*. So installing Mastarr is: get the
-image onto the NAS, create a config directory, paste a compose file.
-
----
-
-## Step 0 — Know your layout
-
-| Thing | Value on this system |
-|---|---|
-| TrueNAS version | 25.10.2.1 |
-| Pools | `Largestorage` (30 TB), `faststorage` (250 GB) |
-| App config convention | `/mnt/faststorage/app-configs/<app>` |
-| Sonarr | `192.168.1.250:8989` — API **v3** |
-| Radarr | `192.168.1.250:7878` — API **v3** |
-| Prowlarr | `192.168.1.250:9696` — API **v1** |
-| Seerr | `192.168.1.250:5057` — note: **not** the default 5055 |
-
-Mastarr will live at `/mnt/faststorage/app-configs/mastarr` and listen on **8770**.
-
-> Because Mastarr runs on the same box as the *arrs, address them by the host IP
-> (`http://192.168.1.250:8989`), not by container name. TrueNAS puts each app in its own
-> compose project, so there is no shared network to resolve names across.
+**If you just want to install it and someone already published the image**, skip to
+[Part 3](#part-3--install-on-truenas). Parts 1–2 are for whoever is publishing.
 
 ---
 
-## Step 1 — Get the image onto the NAS
+## The one thing to understand first
 
-TrueNAS pulls images; it does **not** build them. `build:` in a custom app's compose file
-will not work, and there is no `git clone` step — **putting the repo on GitHub is not by
-itself enough**. Something has to publish a built image. Pick one of these.
+TrueNAS **pulls images. It does not build them.**
 
-### Option A — GitHub + GHCR ✅ best if the repo is on GitHub
+There is no `git clone` step, and `build:` in a custom app's compose file does nothing.
+So putting this repo on GitHub is *not by itself* enough to install it — something has to
+turn the source into a published container image first. That's what Part 2 sets up, once,
+after which installing really is just pasting a YAML file.
 
-This is the "just paste a custom YAML" experience. [`.github/workflows/build.yml`](../.github/workflows/build.yml)
-runs the tests, builds the image, and pushes it to GitHub Container Registry on every push
-to `main`. No secrets to configure — it uses the automatic `GITHUB_TOKEN`.
-
-Push the repo, let the workflow run once, then make the package public:
-**GitHub → your profile → Packages → mastarr → Package settings → Change visibility →
-Public**. (Skip this if you'd rather add registry credentials to TrueNAS under
-**Apps → Manage Container Images**.)
-
-Then the TrueNAS custom app YAML is just:
-
-```yaml
-image: ghcr.io/<your-github-user>/mastarr:latest
+```
+  your machine              GitHub                    your NAS
+  ───────────              ──────                    ────────
+  git push        ──►   Actions builds image  ──►   TrueNAS pulls
+                        pushes to GHCR              custom app YAML
 ```
 
-Drop `pull_policy: never` — you *want* it to pull. Updating becomes: push to `main`, wait
-for the build, then **Apps → mastarr → Restart**. No SSH, no local Docker.
+---
 
-### Option B — SSH transfer (no registry, no GitHub needed)
+## Part 1 — Build and test locally
 
-SSH is already enabled on the NAS. Build locally, stream the image straight over:
+Verify it works on your machine before publishing anything.
 
 ```bash
-cd ~/projects/mastarr
+git clone <your-repo-url> mastarr && cd mastarr
+
+# Backend tests — no network or *arr services required.
+cd backend
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python -m pytest -q          # expect: all passing
+cd ..
+
+# Build the image exactly as CI will. Context is the repo root, so the build
+# sees both ./frontend and ./backend.
 docker build -f backend/Dockerfile -t mastarr:latest .
-docker save mastarr:latest | ssh truenas_admin@192.168.1.250 'docker load'
+
+# Run it. Any writable directory works for /data.
+mkdir -p /tmp/mastarr-data
+docker run --rm -p 8770:8000 \
+  --user "$(id -u):$(id -g)" \
+  -v /tmp/mastarr-data:/data \
+  mastarr:latest
 ```
 
-Then verify it landed:
-
-```bash
-ssh truenas_admin@192.168.1.250 'docker images | grep mastarr'
-```
-
-Because the image now exists locally on the NAS, the compose file must not try to pull it —
-`pull_policy: never` in Step 3 handles that. (With Option A you would remove that line.)
-
-> Only password SSH is configured for `truenas_admin` (no key installed). If you want this
-> to be scriptable, add your key first:
-> `ssh-copy-id truenas_admin@192.168.1.250`
-
-### Option C — Build on the NAS
-
-Clone the repo to a dataset and `docker build` over SSH. Works, but it puts a toolchain and
-source tree on the NAS for no real benefit over A or B. Not recommended.
+Browse to <http://localhost:8770>. You should get a "create admin account" screen. That
+confirms the image is good. Ctrl-C to stop.
 
 ---
 
-## Step 2 — Create the config directory
+## Part 2 — Publish to GitHub (once)
 
-Mastarr keeps its SQLite DB and generated secrets in one directory.
+### 2.1 Push the repo
 
 ```bash
-ssh truenas_admin@192.168.1.250 \
-  'mkdir -p /mnt/faststorage/app-configs/mastarr && chown -R 1000:1000 /mnt/faststorage/app-configs/mastarr'
+git remote add origin git@github.com:YOUR_USERNAME/mastarr.git
+git push -u origin main
 ```
 
-The `chown` matters: the container runs as **uid 1000** (non-root). Without it the app cannot
-create its database and will crash on first start.
+Before pushing, sanity-check that no credentials are going with it:
 
-You can equally create the directory in the TrueNAS UI under
-**Datasets → faststorage → app-configs**, then fix ownership under **Edit Permissions**.
+```bash
+git ls-files | grep -E '\.env$|config\.yml$|\.db$|secret'
+```
+
+That should print **nothing**. `.gitignore` already covers `.env*`, `config.yml`,
+`*.db`, `secret.key` and `jwt.secret` — only the `.example` files are tracked.
+
+### 2.2 Let CI build the image
+
+[`.github/workflows/build.yml`](../.github/workflows/build.yml) is already in the repo. On
+your first push to `main` it runs the tests, builds the frontend, builds the image, and
+pushes it to GitHub Container Registry. There are **no secrets to configure** — it uses the
+`GITHUB_TOKEN` that Actions provides automatically.
+
+Watch it under the repo's **Actions** tab. It takes a few minutes.
+
+### 2.3 Make the package public
+
+This is the step people miss, and it produces a confusing `403` on the NAS.
+
+**Your GitHub profile → Packages → mastarr → Package settings → Danger Zone →
+Change visibility → Public.**
+
+Your image is now at `ghcr.io/YOUR_USERNAME/mastarr:latest`.
+
+> Prefer to keep it private? Leave it, and instead add your GHCR credentials on the NAS
+> under **Apps → Manage Container Images → Add**, using a GitHub personal access token
+> with `read:packages` scope.
 
 ---
 
-## Step 3 — Create the custom app
+## Part 3 — Install on TrueNAS
 
-**Apps → Discover Apps → Custom App** (top-right menu), then choose the YAML / compose
-option and paste this:
+### 3.1 Gather your values
 
-```yaml
-services:
-  mastarr:
-    # Option A (GHCR): image: ghcr.io/<your-github-user>/mastarr:latest
-    #                  ...and delete the pull_policy line below.
-    image: mastarr:latest
-    # Option B only — the image was loaded locally, so don't try to pull it.
-    pull_policy: never
-    restart: unless-stopped
+You need four things. Write them down before you start.
 
-    ports:
-      - "8770:8000"
+| # | Value | How to find it |
+|---|---|---|
+| 1 | **Your dataset path** | Where app config lives, e.g. `/mnt/tank/apps/mastarr`. Look at how your existing apps are laid out and match it. |
+| 2 | **The uid:gid owning it** | `ls -ln /mnt/tank/apps` over SSH. TrueNAS's `apps` user is usually `568:568`; a normal user is often `1000:1000`. |
+| 3 | **Your *arr host IP** | The LAN IP of whatever runs Sonarr/Radarr — usually the NAS itself, e.g. `192.168.1.10`. Not `localhost`. |
+| 4 | **Two generated secrets** | See 3.3. |
 
-    environment:
-      MASTARR_DATA_DIR: /data
+### 3.2 Create the data directory
 
-      # Generate these ONCE and keep them. See the warning below.
-      MASTARR_SECRET_KEY: "PASTE_FERNET_KEY_HERE"
-      MASTARR_JWT_SECRET: "PASTE_RANDOM_STRING_HERE"
-
-      MASTARR_LOG_LEVEL: INFO
-      MASTARR_SESSION_HOURS: "12"
-
-      # Pre-fill the discovery scan box with this host.
-      MASTARR_DISCOVERY_HOSTS: '["192.168.1.250"]'
-
-    volumes:
-      - /mnt/faststorage/app-configs/mastarr:/data
-```
-
-Notes on why this file looks the way it does:
-
-- **No `container_name`** — TrueNAS manages the compose project and naming.
-- **No `build:`** — unsupported for apps; see Step 1.
-- **Host path, not a named volume** — matches how your Sonarr/Radarr/Prowlarr apps already
-  store config, so backups and snapshots cover it the same way.
-
-### Generate the two secrets first
+Either in the UI (**Datasets → your pool → Add Dataset**, then **Edit Permissions** to set
+the owner), or over SSH:
 
 ```bash
-# MASTARR_SECRET_KEY — encrypts stored *arr API keys
+mkdir -p /mnt/YOURPOOL/apps/mastarr
+chown -R 1000:1000 /mnt/YOURPOOL/apps/mastarr    # use YOUR uid:gid
+```
+
+This directory holds the SQLite database and generated secrets — **it is the entire state
+of your install.** Put it somewhere your snapshots cover.
+
+### 3.3 Generate the two secrets
+
+Run these on any machine with Python and openssl (your desktop is fine):
+
+```bash
+# MASTARR_SECRET_KEY — encrypts stored *arr API keys at rest
 python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 
 # MASTARR_JWT_SECRET — signs login sessions
 openssl rand -base64 48
 ```
 
-> **Set these explicitly.** If left unset, Mastarr generates them into `/data` on first run,
-> which is fine — until the dataset is recreated or the app is reinstalled, at which point
-> every stored *arr API key becomes permanently unreadable and everyone is logged out.
-> Setting them in the app config makes the install reproducible.
+Save both somewhere safe, like a password manager.
 
----
+> **Why you must set these explicitly.** If you leave them unset, Mastarr generates them
+> into `/data` on first run, which works fine — right up until you reinstall the app or
+> recreate the dataset. At that point every stored *arr API key becomes permanently
+> unreadable and everyone is logged out. Setting them by hand makes the install
+> reproducible.
 
-## Step 4 — First run
+### 3.4 Create the app
 
-Browse to **`http://192.168.1.250:8770`**.
+**Apps → Discover Apps → Custom App** (top-right) **→ Install via YAML.**
 
-1. The first screen creates your **admin account** — it is only available while no user
-   exists, so claim it immediately.
-2. Go to **Services → Scan**, enter `192.168.1.250`, press **Scan**. Sonarr, Radarr and
-   Prowlarr should be found without any credentials (Mastarr uses the unauthenticated
-   `/ping` endpoint for this).
-3. Paste each service's API key into the row and press **Add**.
+Paste the contents of [`deploy/truenas-custom-app.yaml`](../deploy/truenas-custom-app.yaml).
+It is heavily commented and every line you must change is marked `<<< CHANGE ME >>>`.
+There are five:
 
-### Where the API keys are
+1. `image:` — your GitHub username
+2. `MASTARR_SECRET_KEY` — from 3.3
+3. `MASTARR_JWT_SECRET` — from 3.3
+4. `volumes:` — your dataset path from 3.1
+5. `user:` — your uid:gid from 3.1
 
-In each service's own UI under **Settings → General → Security → API Key**. Or read them
-directly off the NAS:
+Everything else has a working default. Press **Install**.
 
-```bash
-ssh truenas_admin@192.168.1.250 \
-  'grep -o "<ApiKey>[^<]*" /mnt/faststorage/app-configs/{sonarr,radarr,prowlarr}/config.xml'
-```
+### 3.5 First run
 
-Once keys are in, each card should flip from **Needs API key** to **Online** with a version
-number, health warnings and disk usage.
+Browse to **`http://YOUR_NAS_IP:8770`**.
 
----
+1. **Create the admin account immediately.** That screen is open to anyone who can reach
+   the page until a user exists — it locks itself permanently once one does.
+2. Go to **Services**, type your *arr host IP into the scan box, press **Scan**. Sonarr,
+   Radarr and Prowlarr should appear *without* any credentials — Mastarr finds them via
+   their unauthenticated `/ping` endpoint.
+3. Paste each service's API key into its row and press **Add**. Find keys in each
+   service's own UI under **Settings → General → Security → API Key**.
 
-## Step 5 — Reverse proxy (optional)
+Cards flip from **Needs API key** to **Online**, showing version, health warnings and disk
+usage.
 
-You already run NPMplus on 443. To serve Mastarr over TLS, add a proxy host pointing at
-`192.168.1.250:8770`.
+### 3.6 Add your friends (optional)
 
-The session cookie is deliberately **not** marked `Secure`, so plain-HTTP LAN access keeps
-working. Terminate TLS at NPMplus; nothing in Mastarr needs changing.
-
----
-
-## Troubleshooting
-
-**App won't start / crashes immediately**
-Almost always directory ownership. Confirm:
-`ssh truenas_admin@192.168.1.250 'ls -ln /mnt/faststorage/app-configs | grep mastarr'`
-The numeric owner must be `1000`.
-
-**`image not found` / app stuck pulling**
-With Option B, `pull_policy: never` is set but the image was never loaded — re-run Step 1
-and check `docker images | grep mastarr` on the NAS. With Option A, the GHCR package is
-still private: make it public, or add credentials under **Apps → Manage Container Images**.
-
-**Everything shows "Unreachable"**
-Mastarr can't reach the *arrs. Verify from the NAS itself:
-`ssh truenas_admin@192.168.1.250 'curl -s http://192.168.1.250:8989/ping'` → `{"status":"OK"}`
-
-**Everything shows "Needs API key" after adding keys**
-The key was rejected. The card's error distinguishes *"No API key configured"* from *"API key
-was rejected"* — the latter means the key is wrong, not missing.
-
-**Logged out after redeploying, or keys unreadable**
-`MASTARR_JWT_SECRET` / `MASTARR_SECRET_KEY` changed or were regenerated. Set them explicitly
-(Step 3) so they survive reinstalls.
+**Users → Create user**, role **Requester**. They get a stripped-down UI with no access to
+your stack configuration, queues, services, or other users' data — the admin routes are not
+merely hidden from them, they aren't served at all.
 
 ---
 
 ## Updating
 
 ```bash
-cd ~/projects/mastarr && git pull
-docker build -f backend/Dockerfile -t mastarr:latest .
-docker save mastarr:latest | ssh truenas_admin@192.168.1.250 'docker load'
+git pull                      # or make your changes
+git push                      # CI rebuilds and republishes automatically
 ```
 
-Then **Apps → mastarr → Restart**. The `/data` volume persists, so services, users and
-settings survive the update.
+Then on the NAS: **Apps → mastarr → ⋮ → Pull image**, or just **Restart**. Your `/data`
+volume persists, so services, users and settings survive the update.
+
+---
+
+## Reverse proxy (optional)
+
+To reach Mastarr over TLS, point your proxy (Nginx Proxy Manager, Traefik, Caddy) at
+`YOUR_NAS_IP:8770`.
+
+The session cookie is deliberately **not** marked `Secure`, because that would silently
+break plain-HTTP LAN access — the common case for a homelab. Terminate TLS at the proxy;
+nothing in Mastarr needs changing.
+
+---
+
+## Troubleshooting
+
+**App won't start — logs show `The data directory /data is not writable`**
+Ownership mismatch, the most common failure. The error tells you the exact uid Mastarr is
+running as. Either `chown -R <that uid>:<that gid> /mnt/YOURPOOL/apps/mastarr`, or change
+`user:` in the YAML to match whoever already owns the directory.
+
+**`denied` / `403` / `manifest unknown` when pulling the image**
+The GHCR package is still private — see 2.3. Or the username in `image:` is wrong; it must
+be your GitHub username, lowercase.
+
+**`image not found` and you used the manual `docker save` route**
+`pull_policy: never` is set but the image was never loaded onto the NAS. Check with
+`docker images | grep mastarr` over SSH.
+
+**Everything shows "Unreachable"**
+Mastarr can't reach your *arr services. Test from the NAS itself:
+```bash
+curl -s http://YOUR_ARR_IP:8989/ping     # expect {"status":"OK"}
+```
+If that fails, the URL is wrong or the service isn't exposed. Remember each TrueNAS app is
+its own compose project — use IP addresses, **not** container names like `http://sonarr:8989`.
+
+**Services show "Needs API key" even after adding one**
+Look at the card's error text. *"No API key configured"* means it didn't save; *"API key
+was rejected"* means the key is wrong — recopy it from the service's settings page.
+
+**Logged out after an update, or API keys stopped working**
+`MASTARR_JWT_SECRET` / `MASTARR_SECRET_KEY` changed between deployments. Set them
+explicitly in the YAML (3.3) so they survive.
+
+**Port 8770 already in use**
+Change the *left* number only: `"8771:8000"`. The right side is inside the container and
+must stay `8000`.
+
+---
+
+## Alternative: install without GitHub
+
+If you'd rather not publish anything, transfer the image directly over SSH:
+
+```bash
+docker build -f backend/Dockerfile -t mastarr:latest .
+docker save mastarr:latest | ssh USER@YOUR_NAS 'docker load'
+```
+
+Then in the YAML, replace the `image:` line with these two:
+
+```yaml
+    image: mastarr:latest
+    pull_policy: never
+```
+
+Everything else is identical. The trade-off is that each update means repeating the
+`save | load` by hand.

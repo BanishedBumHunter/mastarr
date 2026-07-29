@@ -116,45 +116,47 @@ credential-free.
 
 ## Deploying on TrueNAS SCALE
 
-Mastarr ships as a single container plus one volume, which maps cleanly onto a TrueNAS
-custom app (they are plain `docker compose` under the hood).
+Mastarr ships as one container plus one volume, which maps cleanly onto a TrueNAS custom
+app (they're plain `docker compose` underneath).
 
-**→ Full walkthrough: [docs/truenas-install.md](docs/truenas-install.md)**, written against a
-real TrueNAS SCALE 25.10 target.
+**→ Full walkthrough: [docs/truenas-install.md](docs/truenas-install.md)**
+**→ Paste-ready YAML: [deploy/truenas-custom-app.yaml](deploy/truenas-custom-app.yaml)**
 
-The short version:
+The key thing to know: **TrueNAS pulls images, it does not build them.** There's no
+`git clone` step and `build:` does nothing, so putting this repo on GitHub isn't by itself
+enough — something has to publish an image first. The included GitHub Actions workflow does
+that automatically:
 
-1. **Get the image onto the NAS.** TrueNAS pulls images, it does not build them — `build:`
-   in a custom app's compose file will not work. The simplest route needs no registry:
+```
+git push  ──►  Actions builds + pushes to GHCR  ──►  TrueNAS pulls it
+```
 
-   ```bash
-   docker build -f backend/Dockerfile -t mastarr:latest .
-   docker save mastarr:latest | ssh <user>@<nas> 'docker load'
-   ```
+After the first successful build, **make the GHCR package public** (or add registry
+credentials on the NAS), then paste
+[`deploy/truenas-custom-app.yaml`](deploy/truenas-custom-app.yaml) into
+**Apps → Discover Apps → Custom App → Install via YAML** and change the five lines marked
+`<<< CHANGE ME >>>`:
 
-   Then set `pull_policy: never` in the compose file so it doesn't try to fetch it.
+| # | What | Example |
+|---|------|---------|
+| 1 | Your GitHub username in `image:` | `ghcr.io/alice/mastarr:latest` |
+| 2 | `MASTARR_SECRET_KEY` | generated Fernet key |
+| 3 | `MASTARR_JWT_SECRET` | `openssl rand -base64 48` |
+| 4 | Your dataset path | `/mnt/tank/apps/mastarr:/data` |
+| 5 | The uid:gid owning it | `"568:568"` or `"1000:1000"` |
 
-2. **Create the data directory and give it to uid 1000** (the container is non-root; without
-   this it cannot create its database):
+Prefer not to publish anything? The guide also covers a registry-free route via
+`docker save | ssh docker load`.
 
-   ```bash
-   mkdir -p /mnt/<pool>/app-configs/mastarr
-   chown -R 1000:1000 /mnt/<pool>/app-configs/mastarr
-   ```
+**Permissions** are the most common failure. Mastarr runs non-root and only writes to
+`/data`, so any uid works — it just has to own the directory you mount. If it doesn't, the
+app refuses to start and tells you the exact uid it needs.
 
-3. **Apps → Discover Apps → Custom App**, paste the compose YAML from the install guide.
-   Map container `8000` → host `8770`, mount your directory at `/data`, and set
-   `MASTARR_SECRET_KEY` and `MASTARR_JWT_SECRET` explicitly so a reinstall doesn't
-   invalidate stored keys and log everyone out.
+**Networking.** Mastarr reaches your *arrs by URL and does **not** need to share their
+network namespace. Each TrueNAS app is its own compose project, so container names don't
+resolve between apps — address services by IP (`http://192.168.1.10:8989`), not by name.
 
-4. Browse to `http://<nas-ip>:8770`, create the admin account, then **Services → Scan**.
-
-**Networking.** Mastarr reaches the *arrs by URL and does **not** need to share their network
-namespace. When it runs on the same NAS, address them by host IP
-(`http://192.168.1.250:8989`) — TrueNAS gives each app its own compose project, so container
-names don't resolve across apps.
-
-Put Mastarr behind your reverse proxy for TLS. The session cookie is intentionally **not**
+Put Mastarr behind a reverse proxy for TLS. The session cookie is intentionally **not**
 `Secure`, because that would silently break plain-HTTP LAN access — terminate TLS at the
 proxy.
 

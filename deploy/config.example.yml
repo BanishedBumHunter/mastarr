@@ -1,55 +1,70 @@
-# Mastarr declarative configuration.
+# Mastarr declarative configuration — OPTIONAL.
 #
-# Optional — everything here can equally be done in the UI. Use this when you want the
-# whole Mastarr setup version-controlled and reproducible.
+# Everything here can equally be done in the web UI, and most people should just use the
+# UI. Use this file when you want your whole Mastarr setup version-controlled and
+# reproducible from scratch.
 #
-# Enable by mounting the file and setting MASTARR_CONFIG_FILE=/config/config.yml
+# To enable: mount this file into the container and point at it, e.g.
+#   volumes:
+#     - /mnt/YOURPOOL/apps/mastarr/config.yml:/config/config.yml:ro
+#   environment:
+#     MASTARR_CONFIG_FILE: /config/config.yml
 #
 # Precedence: environment variables > this file > built-in defaults.
 #
-# Services declared here are reconciled into the database on every startup and marked
-# read-only in the UI, because a UI edit would be silently reverted on the next restart.
+# Services declared here are reconciled into the database on every startup and shown
+# read-only in the UI — a UI edit would be silently reverted on the next restart.
+#
+# NOTE: copy this to `config.yml`, not the other way around. `config.yml` is gitignored
+# precisely so a filled-in copy can never be committed by accident.
 
-# --------------------------------------------------------------------- general
+# --------------------------------------------------------------------------- general
 log_level: INFO
 http_timeout: 10.0
 session_hours: 12
 
-# Hosts the discovery scan probes when no host is given in the UI.
+# Pre-fills the "Scan" box on the Services page. Use the LAN IP of whatever runs your
+# *arr services — usually your NAS.
 discovery_hosts:
-  - 192.168.1.250
+  - 192.168.1.10
 
-# -------------------------------------------------------------------- services
+# -------------------------------------------------------------------------- services
 #
-# `type` must be a registered adapter type: sonarr, radarr, prowlarr.
+# `type` must be a registered adapter type. Currently: sonarr, radarr, prowlarr.
 #
-# Prefer `api_key_env` over `api_key` — it names an environment variable to read the key
+# Prefer `api_key_env` over `api_key`. It names an environment variable to read the key
 # from, so this file stays free of credentials and safe to commit. Keys are encrypted at
-# rest once loaded, and never written to logs.
+# rest once loaded, and are never written to logs or returned by the API.
 
 services:
   - name: Sonarr
     type: sonarr
-    url: http://192.168.1.250:8989
+    url: http://192.168.1.10:8989
     api_key_env: SONARR_API_KEY
     enabled: true
 
   - name: Radarr
     type: radarr
-    url: http://192.168.1.250:7878
+    url: http://192.168.1.10:7878
     api_key_env: RADARR_API_KEY
     enabled: true
 
-  # Prowlarr speaks API v1 rather than v3 — Mastarr handles that per adapter, so nothing
-  # special is needed here.
+  # Prowlarr speaks API v1 rather than v3. Mastarr handles that per adapter — you don't
+  # need to configure anything for it.
   - name: Prowlarr
     type: prowlarr
-    url: http://192.168.1.250:9696
+    url: http://192.168.1.10:9696
     api_key_env: PROWLARR_API_KEY
     enabled: true
 
-  # Inline keys work but are discouraged — this file usually ends up in git.
+  # Multiple instances of the same type are fine — just give them distinct names.
   # - name: Sonarr 4K
   #   type: sonarr
-  #   url: http://192.168.1.250:8990
+  #   url: http://192.168.1.10:8990
+  #   api_key_env: SONARR_4K_API_KEY
+
+  # Inline keys work, but are strongly discouraged — this file tends to end up in git.
+  # - name: Sonarr
+  #   type: sonarr
+  #   url: http://192.168.1.10:8989
   #   api_key: "0123456789abcdef0123456789abcdef"
