@@ -99,18 +99,28 @@ Watch it under the repo's **Actions** tab. It takes a few minutes.
 > This only bites once, when bootstrapping the repo. Anyone who *forks* it gets the
 > workflow already in place.
 
-### 2.3 Make the package public
+### 2.3 Check the package is public
 
-This is the step people miss, and it produces a confusing `403` on the NAS.
+Your image is now at `ghcr.io/YOUR_USERNAME/mastarr:latest` (lowercase — GHCR lowercases
+usernames).
 
-**Your GitHub profile → Packages → mastarr → Package settings → Danger Zone →
-Change visibility → Public.**
+**If your repo is public, the package inherits that and you're done.** Verify without
+needing any credentials:
 
-Your image is now at `ghcr.io/YOUR_USERNAME/mastarr:latest`.
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" \
+  "https://ghcr.io/v2/YOUR_USERNAME/mastarr/manifests/latest" \
+  -H "Authorization: Bearer $(curl -s 'https://ghcr.io/token?scope=repository:YOUR_USERNAME/mastarr:pull&service=ghcr.io' | sed -E 's/.*"token":"([^"]+)".*/\1/')"
+```
 
-> Prefer to keep it private? Leave it, and instead add your GHCR credentials on the NAS
-> under **Apps → Manage Container Images → Add**, using a GitHub personal access token
-> with `read:packages` scope.
+`200` means anyone — including your NAS — can pull it. Anything else means it's private.
+
+**If it's private** (usual when the repo is private), either flip it:
+**GitHub profile → Packages → mastarr → Package settings → Danger Zone → Change visibility
+→ Public**, or keep it private and add credentials on the NAS under
+**Apps → Manage Container Images → Add**, using a token with `read:packages` scope.
+
+A private package is the usual cause of a `403` / `denied` when TrueNAS tries to pull.
 
 ---
 

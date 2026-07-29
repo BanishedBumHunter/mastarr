@@ -131,8 +131,8 @@ that automatically:
 git push  ──►  Actions builds + pushes to GHCR  ──►  TrueNAS pulls it
 ```
 
-After the first successful build, **make the GHCR package public** (or add registry
-credentials on the NAS), then paste
+After the first successful build, check the GHCR package is public — it inherits this from
+a public repo, so usually there's nothing to do — then paste
 [`deploy/truenas-custom-app.yaml`](deploy/truenas-custom-app.yaml) into
 **Apps → Discover Apps → Custom App → Install via YAML** and change the five lines marked
 `<<< CHANGE ME >>>`:
