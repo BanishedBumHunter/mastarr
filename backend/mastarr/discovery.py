@@ -24,6 +24,7 @@ from urllib.parse import urlparse
 import httpx
 from pydantic import BaseModel, Field
 
+from .adapters.registry import distinctive_probe_type, probe_ports, probe_signatures
 from .adapters import (
     AdapterError,
     ServiceUnauthorized,
@@ -69,24 +70,39 @@ async def probe_endpoint(
     url = f"{scheme}://{host}:{port}"
     owns_client = client is None
     client = client or httpx.AsyncClient(timeout=timeout, follow_redirects=True)
+
+    matched_path: str | None = None
     try:
-        response = await client.get(f"{url}/ping")
-    except httpx.HTTPError:
-        return None
+        # Try each distinct unauthenticated probe endpoint. Most services answer /ping;
+        # Jellyseerr only answers /api/v1/status, so a single hardcoded path would miss it
+        # entirely and look like "Mastarr can't see my Jellyseerr".
+        for path, service_type in probe_signatures():
+            try:
+                response = await client.get(f"{url}/{path}")
+            except httpx.HTTPError:
+                continue
+            if response.status_code != 200:
+                continue
+            try:
+                payload = response.json()
+            except ValueError:
+                continue
+            if get_adapter_class(service_type).matches_probe(payload):
+                matched_path = path
+                break
     finally:
         if owns_client:
             await client.aclose()
 
-    if response.status_code != 200:
-        return None
-    try:
-        payload = response.json()
-    except ValueError:
-        return None
-    if not isinstance(payload, dict) or str(payload.get("status", "")).lower() != "ok":
+    if matched_path is None:
         return None
 
-    guess = default_ports().get(port)
+    # Two independent hints, neither of which is proof:
+    #   - a known default port suggests a type
+    #   - a probe endpoint only *proves* a type when no other type shares it
+    # `/ping` is answered by every *arr, so it never identifies one. Identity still comes
+    # from system/status in phase two.
+    guess = probe_ports().get(port) or distinctive_probe_type(matched_path)
     return DiscoveredService(
         url=url,
         host=host,
@@ -157,7 +173,7 @@ async def scan_host(
     timeout: float = DEFAULT_PROBE_TIMEOUT,
 ) -> list[DiscoveredService]:
     """Probe every known default port on one host, concurrently."""
-    targets = ports or sorted(default_ports())
+    targets = ports or sorted(probe_ports())
     async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
         results = await asyncio.gather(
             *(

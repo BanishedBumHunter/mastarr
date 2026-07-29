@@ -7,12 +7,14 @@ from . import (
     activity,
     auth,
     calendar,
+    config,
     dashboard,
     discover,
     discovery,
     images,
     library,
     services,
+    settings,
     users,
 )
 
@@ -39,5 +41,7 @@ api_router.include_router(library.router)
 api_router.include_router(activity.router)
 api_router.include_router(discover.router)
 api_router.include_router(images.router)
+api_router.include_router(settings.router)
+api_router.include_router(config.router)
 
 __all__ = ["api_router"]

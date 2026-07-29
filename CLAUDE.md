@@ -80,7 +80,28 @@ gating is route-tree level, not CSS.
 Keys are Fernet-encrypted in SQLite. `logging.py` installs a global redaction filter.
 Never `print()` a key, never put one in an error message, never commit one.
 
-### 10. Aggregated views report what's missing
+### 10. Config portability is computed, not assumed
+
+Not everything can be copied between services. A **quality profile** is a list of quality
+*IDs*, and the IDs mean different things per type — Sonarr's vocabulary is
+`SDTV`/`DVD`/`Bluray-480p`, Radarr's is `WORKPRINT`/`CAM`/`TELESYNC`. Copying one across
+produces a profile referencing qualities that don't exist. **Naming** is per-type too.
+**Custom formats** are specification-based and portable anywhere.
+
+`config_sync.PORTABILITY` encodes this and `compatibility()` enforces it. A target that
+can't take a resource is reported `incompatible` with a reason, never written to.
+
+Config writes are always **preview then confirm**, and `apply` re-runs the preview rather
+than trusting a plan the client sends back — a stale diff would overwrite newer work.
+
+### 11. Compare behaviour, not presentation
+
+Diffs strip cosmetic metadata (`infoLink`, `implementationName`, field `label`/`helpText`,
+ids). The *arrs regenerate all of it, and some is service-branded — a Sonarr custom
+format's `infoLink` points at the Sonarr wiki and Radarr rewrites it on save. Comparing it
+made a correctly-synced item show a permanent "update available".
+
+### 12. Aggregated views report what's missing
 
 When a fan-out view drops a service, say so (`failures[]` → `PartialWarning`). Silently
 returning partial data is worse than an error: the user believes their library really is
@@ -103,13 +124,13 @@ that small.
 1. ~~Adapter layer + auto-discovery + health dashboard~~ ✅
 2. ~~Auth + two-role model with permission seam~~ ✅
 3. ~~Unified queue/history/activity views~~ ✅
-4. Cross-stack config: quality profiles, custom formats, root folders, download clients
-5. Indexer management via Prowlarr
+4. ~~Cross-stack config: profiles, custom formats, root folders, clients, naming~~ ✅
+5. ~~Indexer management via Prowlarr~~ ✅
 6. ~~Requests via Jellyseerr/Overseerr~~ ✅
-7. Setup wizard (declarative YAML config ✅, wizard pending)
+7. ~~Setup wizard + declarative YAML config~~ ✅
 
-Also shipped beyond the original list: unified calendar, unified library with everyday
-management, and Lidarr/Readarr adapters.
+All seven complete. Also shipped beyond the original list: unified calendar, unified
+library with everyday management, an admin Settings surface, and Lidarr/Readarr adapters.
 
 ## Conventions
 

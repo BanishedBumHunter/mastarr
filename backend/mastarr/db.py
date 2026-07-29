@@ -11,7 +11,7 @@ from .config import Settings, get_settings
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _engine = None
 
@@ -64,6 +64,9 @@ def _apply_additive_migrations(session: Session, from_version: int) -> None:
     grow this function.
     """
     from sqlalchemy import text
+
+    # v3 adds the app_setting table, which create_all handles on its own — no column
+    # change needed, so there is nothing to do here for it.
 
     if from_version < 2:
         columns = {

@@ -59,6 +59,31 @@ log = logging.getLogger(__name__)
 # listed on the card; it just doesn't change the verdict.
 INFORMATIONAL_HEALTH_SOURCES = frozenset({"UpdateCheck"})
 
+# Config collections Mastarr can read and push. The key is the name used throughout the
+# sync layer and the API; the value is the *arr endpoint. Kept in one place so a service
+# type that spells an endpoint differently only has to override this mapping.
+CONFIG_ENDPOINTS: dict[str, str] = {
+    "quality_profile": "qualityprofile",
+    "custom_format": "customformat",
+    "root_folder": "rootfolder",
+    "download_client": "downloadclient",
+    "indexer": "indexer",
+}
+
+# The `unsupported` sets predate config sync and use the plural names of the normalized
+# read methods (`quality_profiles`). Mapping here rather than renaming either side keeps
+# one vocabulary per layer and means a type that declares `quality_profiles` unsupported
+# automatically blocks the config-sync path too — no set can drift out of step with the
+# other.
+CONFIG_GUARD: dict[str, str] = {
+    "quality_profile": "quality_profiles",
+    "custom_format": "custom_formats",
+    "root_folder": "root_folders",
+    "download_client": "download_clients",
+    "indexer": "indexers",
+    "naming": "naming",
+}
+
 
 class ArrAdapter(ABC):
     """Common interface to one *arr service.
@@ -71,6 +96,11 @@ class ArrAdapter(ABC):
     display_name: ClassVar[str] = ""
     api_version: ClassVar[str] = "v3"
     default_port: ClassVar[int] = 0
+    # Ports this type is commonly moved to. Scanned in addition to default_port.
+    alternate_ports: ClassVar[tuple[int, ...]] = ()
+    # Unauthenticated endpoint that proves something is listening. Every *arr serves
+    # /ping; Jellyseerr does not, so this is per-type rather than assumed.
+    probe_path: ClassVar[str] = "ping"
     # What `system/status` reports in `appName`, lowercased. Usually the service type,
     # but kept separate because they are not guaranteed to match.
     app_name: ClassVar[str] = ""
@@ -86,6 +116,11 @@ class ArrAdapter(ABC):
     search_command: ClassVar[str] = ""
     # Path fragment in the native UI, for deep links.
     native_path: ClassVar[str] = ""
+    # External-id field and the lookup prefix that finds by it, for native adds.
+    remote_id_field: ClassVar[str] = ""
+    remote_id_prefix: ClassVar[str] = ""
+    # What the service calls "search after adding" inside addOptions.
+    search_on_add_field: ClassVar[str] = "searchForMissingEpisodes"
 
     def __init__(
         self,
@@ -204,6 +239,17 @@ class ArrAdapter(ABC):
             raise UnsupportedOperation(
                 f"{self.display_name} does not support {operation}.", service=self.name
             )
+
+    @classmethod
+    def matches_probe(cls, payload: Any) -> bool:
+        """Does this unauthenticated probe response look like our kind of service?
+
+        The *arrs answer `/ping` with `{"status":"OK"}`. Overridden where that isn't true.
+        """
+        return (
+            isinstance(payload, dict)
+            and str(payload.get("status", "")).lower() == "ok"
+        )
 
     @staticmethod
     def _parse_dt(value: Any) -> datetime | None:
@@ -495,6 +541,55 @@ class ArrAdapter(ABC):
             },
         )
 
+    # ------------------------------------------------- configuration writes
+
+    async def raw_config(self, resource: str) -> list[dict[str, Any]]:
+        """Untouched records for a config collection.
+
+        Config sync deliberately works on the *raw* payload rather than the normalized
+        schemas: copying a quality profile means reproducing every field the service
+        knows about, including ones Mastarr doesn't model. Normalizing and re-expanding
+        would quietly drop them.
+        """
+        self._guard(CONFIG_GUARD[resource])
+        data = await self._request("GET", CONFIG_ENDPOINTS[resource])
+        return data if isinstance(data, list) else []
+
+    async def create_config(self, resource: str, payload: dict[str, Any]) -> dict[str, Any]:
+        self._guard(CONFIG_GUARD[resource])
+        body = {k: v for k, v in payload.items() if k != "id"}
+        result = await self._request("POST", CONFIG_ENDPOINTS[resource], json=body)
+        return result if isinstance(result, dict) else {}
+
+    async def update_config(
+        self, resource: str, item_id: int, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        self._guard(CONFIG_GUARD[resource])
+        body = {**payload, "id": item_id}
+        result = await self._request(
+            "PUT", f"{CONFIG_ENDPOINTS[resource]}/{item_id}", json=body
+        )
+        return result if isinstance(result, dict) else {}
+
+    async def delete_config(self, resource: str, item_id: int) -> None:
+        self._guard(CONFIG_GUARD[resource])
+        await self._request("DELETE", f"{CONFIG_ENDPOINTS[resource]}/{item_id}")
+
+    async def get_naming(self) -> dict[str, Any]:
+        self._guard("naming")
+        data = await self._request("GET", "config/naming")
+        return data if isinstance(data, dict) else {}
+
+    async def update_naming(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Naming is a singleton record, so it is always a PUT against its own id."""
+        self._guard("naming")
+        current = await self.get_naming()
+        merged = {**current, **payload}
+        result = await self._request(
+            "PUT", f"config/naming/{current.get('id', 1)}", json=merged
+        )
+        return result if isinstance(result, dict) else merged
+
     async def image_bytes(self, path: str) -> tuple[bytes, str]:
         """Fetch a poster/banner for the image proxy. Returns (body, content-type)."""
         client = await self._get_client()
@@ -513,6 +608,49 @@ class ArrAdapter(ABC):
                 f"Image request returned HTTP {response.status_code}", service=self.name
             )
         return response.content, response.headers.get("content-type", "image/jpeg")
+
+    async def add_item(
+        self,
+        *,
+        remote_id: str,
+        quality_profile_id: int,
+        root_folder_path: str,
+        monitored: bool = True,
+        search_on_add: bool = True,
+    ) -> dict[str, Any]:
+        """Add a new item to the library from a lookup result.
+
+        The native request path, used only when no Jellyseerr/Overseerr is connected.
+        Looks the item up first so the payload carries whatever metadata the service
+        expects, rather than us trying to synthesise a record it will reject.
+        """
+        self._guard("library")
+        if self.media_endpoint is None or not self.remote_id_field:
+            raise UnsupportedOperation(
+                f"{self.display_name} cannot add items this way.", service=self.name
+            )
+
+        results = await self._request(
+            "GET",
+            f"{self.media_endpoint}/lookup",
+            params={"term": f"{self.remote_id_prefix}{remote_id}"},
+        )
+        if not isinstance(results, list) or not results:
+            raise ServiceError(
+                f"Nothing found for {self.remote_id_field} {remote_id}.", service=self.name
+            )
+
+        record = dict(results[0])
+        record.update(
+            {
+                "qualityProfileId": quality_profile_id,
+                "rootFolderPath": root_folder_path,
+                "monitored": monitored,
+                "addOptions": {self.search_on_add_field: search_on_add},
+            }
+        )
+        created = await self._request("POST", self.media_endpoint, json=record)
+        return created if isinstance(created, dict) else record
 
     def native_url(self, item_id: int) -> str | None:
         """Deep link into the service's own UI, for what Mastarr doesn't reimplement."""

@@ -85,17 +85,37 @@ class Settings(BaseSettings):
         return {k: v for k, v in raw.items() if k != "services"}
 
 
+# Values an admin saved through the settings UI. Held here rather than read per-request
+# so `get_settings()` stays synchronous and free of a database dependency — config is read
+# on nearly every code path, including ones with no session to hand.
+_db_overrides: dict[str, Any] = {}
+
+
+def set_db_overrides(overrides: dict[str, Any]) -> None:
+    """Install the database layer. Called at startup and after a settings write."""
+    global _db_overrides
+    _db_overrides = dict(overrides)
+    get_settings.cache_clear()
+
+
 @lru_cache
 def get_settings() -> Settings:
-    """Settings singleton. env wins; YAML fills the gaps it leaves."""
+    """Settings singleton, layered **env > YAML > database > default**.
+
+    Each layer only fills gaps the ones above it left. `model_fields_set` is what makes
+    that possible: it tells us which fields the environment actually set, as opposed to
+    which merely have a value because of a default.
+    """
     settings = Settings()
-    overrides = settings.yaml_overrides()
-    if overrides:
-        explicit = set(settings.model_fields_set)
-        merged = {
-            **{k: v for k, v in overrides.items() if k not in explicit},
-            **settings.model_dump(include=explicit),
-        }
+    explicit = set(settings.model_fields_set)  # set by env (or an .env file)
+    yaml_overrides = settings.yaml_overrides()
+
+    if yaml_overrides or _db_overrides:
+        merged: dict[str, Any] = {}
+        merged.update(_db_overrides)  # lowest of the three
+        merged.update(yaml_overrides)  # beats the database
+        merged.update(settings.model_dump(include=explicit))  # env beats everything
         settings = Settings(**merged)
+
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     return settings

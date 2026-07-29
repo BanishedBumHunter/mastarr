@@ -837,3 +837,102 @@ a.btn:hover {
     padding: 14px;
   }
 }
+
+/* ------------------------------------------------------------------- tabs */
+
+.tabbar {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 18px;
+  overflow-x: auto;
+}
+.tabbar button {
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: var(--text-dim);
+  padding: 8px 14px;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.tabbar button:hover {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+.tabbar button.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+/* Nested pages keep their own <h1>; inside a tab that's one heading too many. */
+.tabpanel .page-head h1 {
+  display: none;
+}
+.tabpanel .page-head {
+  margin-bottom: 0;
+}
+
+/* --------------------------------------------------------------- settings */
+
+.settings-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.setting-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr);
+  gap: 16px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+  align-items: start;
+}
+.setting-row:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.setting-label label {
+  font-size: 13.5px;
+  color: var(--text);
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+
+.setting-control {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+textarea {
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-inset);
+  color: var(--text);
+  width: 100%;
+  resize: vertical;
+  font-family: var(--mono);
+}
+textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+input:disabled,
+select:disabled,
+textarea:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+@media (max-width: 720px) {
+  .setting-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}

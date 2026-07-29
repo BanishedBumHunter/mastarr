@@ -74,6 +74,14 @@ ADMIN_ENDPOINTS = [
     ("GET", "/api/activity/history"),
     ("GET", "/api/activity/wanted"),
     ("GET", "/api/discover/users"),
+    ("GET", "/api/settings"),
+    ("PUT", "/api/settings"),
+    ("GET", "/api/settings/about"),
+    ("GET", "/api/config/resources"),
+    ("GET", "/api/config/custom_format"),
+    ("POST", "/api/config/preview"),
+    ("POST", "/api/config/apply"),
+    ("GET", "/api/config/indexers/overview"),
 ]
 
 # Reachable by Requesters too. Listed so the split is explicit and reviewable, rather than

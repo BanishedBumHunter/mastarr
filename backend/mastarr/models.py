@@ -63,6 +63,23 @@ class User(SQLModel, table=True):
     jellyseerr_user_id: Optional[int] = None
 
 
+class AppSetting(SQLModel, table=True):
+    """A Mastarr setting the admin edited in the UI.
+
+    Only the layer *beneath* env and YAML — see config.get_settings. Secrets are
+    deliberately never stored here; they stay in the environment or a 0600 file, so the
+    settings UI has nothing sensitive to leak.
+    """
+
+    __tablename__ = "app_setting"
+
+    key: str = Field(primary_key=True)
+    # JSON-encoded, so a list (discovery_hosts) and a float (http_timeout) round-trip
+    # through the same column without a type registry.
+    value_json: str
+    updated_at: datetime = Field(default_factory=_utcnow)
+
+
 class SchemaVersion(SQLModel, table=True):
     """Standing in for Alembic while the project is INACTIVE. See CLAUDE.md."""
 

@@ -276,6 +276,86 @@ export interface JellyseerrUser {
   email: string | null
 }
 
+export interface AppSettingRow {
+  key: string
+  value: unknown
+  stored_value: unknown
+  source: 'env' | 'file' | 'database' | 'default'
+  locked: boolean
+  label: string
+  help: string
+  type: string
+  choices?: string[]
+  min?: number
+  max?: number
+}
+
+export interface ConfigResourceInfo {
+  key: string
+  portability: 'any' | 'same_media_kind'
+  note: string
+}
+
+export interface ConfigItem {
+  service_id: number
+  service_name: string
+  service_type: string
+  media_kind: string | null
+  item: Record<string, unknown>
+}
+
+export interface FieldDiff {
+  field: string
+  current: unknown
+  proposed: unknown
+}
+
+export type SyncAction = 'create' | 'update' | 'identical' | 'incompatible' | 'error'
+
+export interface TargetPlan {
+  service_id: number
+  service_name: string
+  service_type: string
+  action: SyncAction
+  reason: string | null
+  target_item_id: number | null
+  changes: FieldDiff[]
+}
+
+export interface SyncPreview {
+  resource: string
+  source_service_id: number
+  source_service_name: string
+  item_name: string
+  targets: TargetPlan[]
+}
+
+export interface ApplyResult {
+  service_id: number
+  service_name: string
+  action: SyncAction
+  ok: boolean
+  detail: string | null
+}
+
+export interface IndexerOverview {
+  available: boolean
+  message?: string
+  service_id?: number
+  service_name?: string
+  native_url?: string
+  applications: { id: number; name: string; implementation: string; sync_level: string }[]
+  indexers: {
+    id: number
+    name: string
+    implementation: string
+    enabled: boolean
+    protocol: string | null
+    priority: number | null
+    stats?: { queries: number; grabs: number; failures: number } | null
+  }[]
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -417,6 +497,40 @@ export const api = {
       { method: 'POST' },
     ),
   jellyseerrUsers: () => request<JellyseerrUser[]>('/api/discover/users'),
+
+  // ------------------------------------------------------- settings & config
+
+  settings: () => request<AppSettingRow[]>('/api/settings'),
+  updateSetting: (key: string, value: unknown) =>
+    request<AppSettingRow[]>('/api/settings', { method: 'PUT', ...body({ key, value }) }),
+  about: () =>
+    request<{ version: string; schema_version: number; data_dir: string; config_file: string | null }>(
+      '/api/settings/about',
+    ),
+
+  configResources: () =>
+    request<{ resources: ConfigResourceInfo[] }>('/api/config/resources'),
+  configItems: (resource: string) => request<ConfigItem[]>(`/api/config/${resource}`),
+  configPreview: (data: {
+    resource: string
+    source_service_id: number
+    item_id?: number
+    target_service_ids?: number[]
+  }) => request<SyncPreview>('/api/config/preview', { method: 'POST', ...body(data) }),
+  configApply: (data: {
+    resource: string
+    source_service_id: number
+    item_id?: number
+    target_service_ids: number[]
+  }) =>
+    request<ApplyResult[]>('/api/config/apply?confirm=true', {
+      method: 'POST',
+      ...body(data),
+    }),
+
+  indexerOverview: () => request<IndexerOverview>('/api/config/indexers/overview'),
+  testIndexer: (id: number) =>
+    request<{ ok: boolean }>(`/api/config/indexers/${id}/test`, { method: 'POST' }),
 }
 
 /** Poster URL for an *arr-hosted cover, routed through Mastarr's proxy. */

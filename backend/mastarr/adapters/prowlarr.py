@@ -14,7 +14,7 @@ priority 5. Reading the indexer list works today via the inherited implementatio
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from .base import ArrAdapter
 
@@ -43,5 +43,54 @@ class ProwlarrAdapter(ArrAdapter):
             "wanted_missing",
             "seasons",
             "search_command",
+            "custom_formats",
+            "naming",
         }
     )
+
+    async def applications(self) -> list[dict[str, Any]]:
+        """The *arr apps Prowlarr pushes indexers to.
+
+        This is what makes Prowlarr the source of truth: indexers are configured here
+        once and Prowlarr syncs them outward. Mastarr shows the reach rather than writing
+        indexers into each *arr itself, which would fight Prowlarr's own sync.
+        """
+        data = await self._request("GET", "applications")
+        if not isinstance(data, list):
+            return []
+        return [
+            {
+                "id": a.get("id"),
+                "name": a.get("name"),
+                "implementation": a.get("implementation"),
+                "sync_level": a.get("syncLevel"),
+                "tags": a.get("tags") or [],
+            }
+            for a in data
+        ]
+
+    async def indexer_stats(self) -> dict[int, dict[str, Any]]:
+        """Per-indexer query/grab counts, keyed by indexer id."""
+        data = await self._request("GET", "indexerstats")
+        if not isinstance(data, dict):
+            return {}
+        return {
+            row.get("indexerId"): {
+                "queries": row.get("numberOfQueries", 0),
+                "grabs": row.get("numberOfGrabs", 0),
+                "failures": row.get("numberOfFailedQueries", 0),
+            }
+            for row in data.get("indexers", [])
+            if row.get("indexerId") is not None
+        }
+
+    async def test_indexer(self, indexer_id: int) -> bool:
+        """Ask Prowlarr to test an indexer. Returns False rather than raising on failure."""
+        from .errors import AdapterError
+
+        try:
+            records = await self._request("GET", f"indexer/{indexer_id}")
+            await self._request("POST", "indexer/test", json=records)
+            return True
+        except AdapterError:
+            return False

@@ -16,8 +16,8 @@ import Discover from './pages/Discover'
 import Library from './pages/Library'
 import Login from './pages/Login'
 import Requests from './pages/Requests'
-import Services from './pages/Services'
-import Users from './pages/Users'
+import Settings from './pages/Settings'
+import Wizard from './pages/Wizard'
 
 function TopBar({ links }: { links: { to: string; label: string }[] }) {
   const { user, logout } = useAuth()
@@ -59,7 +59,8 @@ function AdminApp() {
           { to: '/discover', label: 'Discover' },
           { to: '/requests', label: 'Requests' },
           { to: '/activity', label: 'Activity' },
-          { to: '/dashboard', label: 'Services' },
+          { to: '/dashboard', label: 'Status' },
+          { to: '/settings', label: 'Settings' },
         ]}
       />
       <main className="content">
@@ -72,8 +73,10 @@ function AdminApp() {
           <Route path="/requests" element={<Requests />} />
           <Route path="/activity" element={<Activity />} />
           <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/services" element={<Services />} />
-          <Route path="/users" element={<Users />} />
+          {/* Services and Users live inside Settings now — these keep old links working. */}
+          <Route path="/settings" element={<Settings />} />
+          <Route path="/services" element={<Navigate to="/settings?tab=services" replace />} />
+          <Route path="/users" element={<Navigate to="/settings?tab=users" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
@@ -115,7 +118,9 @@ export default function App() {
     )
   }
 
-  if (state?.needs_setup) return <Login mode="setup" />
+  // A fresh instance gets the wizard rather than a bare account form: otherwise you
+  // land on an empty Library with no hint that services need connecting.
+  if (state?.needs_setup) return <Wizard />
   if (!state?.authenticated) return <Login mode="login" />
 
   return isAdmin ? <AdminApp /> : <RequesterApp />

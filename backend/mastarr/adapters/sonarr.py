@@ -20,6 +20,9 @@ class SonarrAdapter(ArrAdapter):
     calendar_params: ClassVar[dict[str, str]] = {"includeSeries": "true"}
     search_command: ClassVar[str] = "SeriesSearch"
     native_path: ClassVar[str] = "series"
+    remote_id_field: ClassVar[str] = "tvdbId"
+    remote_id_prefix: ClassVar[str] = "tvdb:"
+    search_on_add_field: ClassVar[str] = "searchForMissingEpisodes"
 
     def _remote_id(self, item: dict[str, Any]) -> str | None:
         tvdb = item.get("tvdbId")

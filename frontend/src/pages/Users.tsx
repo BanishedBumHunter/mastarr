@@ -10,11 +10,22 @@ import { useAuth } from '../auth'
 export default function Users() {
   const queryClient = useQueryClient()
   const { user: me } = useAuth()
-  const [form, setForm] = useState<{ username: string; password: string; role: Role }>({
-    username: '',
-    password: '',
-    role: 'requester',
+  const [form, setForm] = useState<{
+    username: string
+    password: string
+    role: Role
+    jellyseerr_user_id: number | null
+  }>({ username: '', password: '', role: 'requester', jellyseerr_user_id: null })
+
+  // Jellyseerr accounts, so a Mastarr user's requests are attributed to the right person.
+  // Absent (or erroring) simply means no Jellyseerr is connected — not a failure worth
+  // showing, so the picker just doesn't appear.
+  const jellyseerrUsers = useQuery({
+    queryKey: ['jellyseerr-users'],
+    queryFn: api.jellyseerrUsers,
+    retry: false,
   })
+  const linkable = jellyseerrUsers.data ?? []
 
   const { data: users, isLoading, error } = useQuery({ queryKey: ['users'], queryFn: api.users })
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['users'] })
@@ -22,7 +33,7 @@ export default function Users() {
   const create = useMutation({
     mutationFn: () => api.createUser(form),
     onSuccess: async () => {
-      setForm({ username: '', password: '', role: 'requester' })
+      setForm({ username: '', password: '', role: 'requester', jellyseerr_user_id: null })
       await invalidate()
     },
   })
@@ -78,6 +89,30 @@ export default function Users() {
                 <option value="admin">Admin</option>
               </select>
             </div>
+            {linkable.length > 0 ? (
+              <div>
+                <label htmlFor="ujs">Jellyseerr account</label>
+                <select
+                  id="ujs"
+                  value={form.jellyseerr_user_id ?? ''}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      jellyseerr_user_id: event.target.value
+                        ? Number(event.target.value)
+                        : null,
+                    }))
+                  }
+                >
+                  <option value="">Not linked</option>
+                  {linkable.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.display_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
             <button
               className="primary"
               onClick={() => create.mutate()}
@@ -89,6 +124,9 @@ export default function Users() {
           <p className="subtle" style={{ marginBottom: 0 }}>
             <b>Admins</b> manage the whole stack. <b>Requesters</b> can only browse and
             request media, and see just their own requests.
+            {linkable.length > 0
+              ? ' Link a Requester to a Jellyseerr account so their requests are attributed to them — without it, their request list stays empty.'
+              : ''}
           </p>
           {create.error ? <ErrorBox>{(create.error as Error).message}</ErrorBox> : null}
         </div>
@@ -105,6 +143,7 @@ export default function Users() {
                   <tr>
                     <th>Username</th>
                     <th>Role</th>
+                    {linkable.length > 0 ? <th>Jellyseerr</th> : null}
                     <th>Status</th>
                     <th>Created</th>
                     <th />
@@ -126,6 +165,32 @@ export default function Users() {
                           {user.role}
                         </span>
                       </td>
+                      {linkable.length > 0 ? (
+                        <td>
+                          <select
+                            value={user.jellyseerr_user_id ?? ''}
+                            disabled={update.isPending}
+                            onChange={(event) =>
+                              update.mutate({
+                                id: user.id,
+                                data: {
+                                  // 0 unlinks — the backend treats it as "clear".
+                                  jellyseerr_user_id: event.target.value
+                                    ? Number(event.target.value)
+                                    : 0,
+                                },
+                              })
+                            }
+                          >
+                            <option value="">Not linked</option>
+                            {linkable.map((u) => (
+                              <option key={u.id} value={u.id}>
+                                {u.display_name}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                      ) : null}
                       <td className="subtle">{user.is_active ? 'active' : 'disabled'}</td>
                       <td className="subtle">
                         {new Date(user.created_at).toLocaleDateString()}

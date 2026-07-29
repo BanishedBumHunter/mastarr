@@ -34,6 +34,12 @@ class JellyseerrAdapter(ArrAdapter):
     display_name: ClassVar[str] = "Jellyseerr"
     api_version: ClassVar[str] = "v1"
     default_port: ClassVar[int] = 5055
+    # Overseerr/Jellyseerr are very often moved off 5055 when both run, or when
+    # something else already holds the port.
+    alternate_ports: ClassVar[tuple[int, ...]] = (5056, 5057)
+    # Jellyseerr has no /ping — it 307-redirects. Its /api/v1/status is unauthenticated
+    # and returns version info, which serves the same purpose.
+    probe_path: ClassVar[str] = "api/v1/status"
     app_name: ClassVar[str] = "jellyseerr"
     media_endpoint: ClassVar[str | None] = None
     media_kind: ClassVar[str] = "request"
@@ -56,8 +62,15 @@ class JellyseerrAdapter(ArrAdapter):
             "library",
             "wanted_missing",
             "search_command",
+            "custom_formats",
+            "naming",
         }
     )
+
+    @classmethod
+    def matches_probe(cls, payload: Any) -> bool:
+        """`/api/v1/status` returns `{version, commitTag, ...}` with no auth."""
+        return isinstance(payload, dict) and "version" in payload and "commitTag" in payload
 
     # ------------------------------------------------------------------ identity
 

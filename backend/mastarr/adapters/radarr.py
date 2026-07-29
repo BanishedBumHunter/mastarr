@@ -18,6 +18,9 @@ class RadarrAdapter(ArrAdapter):
     media_kind: ClassVar[str] = "movie"
     search_command: ClassVar[str] = "MoviesSearch"
     native_path: ClassVar[str] = "movie"
+    remote_id_field: ClassVar[str] = "tmdbId"
+    remote_id_prefix: ClassVar[str] = "tmdb:"
+    search_on_add_field: ClassVar[str] = "searchForMovie"
     # Movies have no seasons.
     unsupported: ClassVar[frozenset[str]] = frozenset({"seasons"})
 

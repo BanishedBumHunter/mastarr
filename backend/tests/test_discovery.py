@@ -34,12 +34,20 @@ def test_split_target_handles_full_url():
 # -------------------------------------------------------- phase 1: presence
 
 
+def _no_jellyseerr(host: str, port: int) -> None:
+    """Discovery probes every distinct unauthenticated endpoint, not just /ping."""
+    respx.get(f"http://{host}:{port}/api/v1/status").mock(
+        return_value=httpx.Response(404)
+    )
+
+
 @respx.mock
 async def test_probe_finds_a_service_without_any_api_key():
     """The property that makes zero-config first run possible."""
     respx.get("http://host.test:8989/ping").mock(
         return_value=httpx.Response(200, json=fx.PING_OK)
     )
+    _no_jellyseerr("host.test", 8989)
     found = await probe_endpoint("host.test", 8989)
 
     assert found is not None
@@ -53,6 +61,7 @@ async def test_probe_returns_none_when_nothing_listens():
     respx.get("http://host.test:8989/ping").mock(
         side_effect=httpx.ConnectError("refused")
     )
+    _no_jellyseerr("host.test", 8989)
     assert await probe_endpoint("host.test", 8989) is None
 
 
@@ -62,6 +71,7 @@ async def test_probe_rejects_a_non_arr_service_on_an_arr_port():
     respx.get("http://host.test:8989/ping").mock(
         return_value=httpx.Response(200, text="<html>nginx</html>")
     )
+    _no_jellyseerr("host.test", 8989)
     assert await probe_endpoint("host.test", 8989) is None
 
 
@@ -70,17 +80,41 @@ async def test_probe_rejects_wrong_json_shape():
     respx.get("http://host.test:8989/ping").mock(
         return_value=httpx.Response(200, json={"hello": "world"})
     )
+    _no_jellyseerr("host.test", 8989)
     assert await probe_endpoint("host.test", 8989) is None
 
 
 @respx.mock
 async def test_probe_on_unknown_port_has_no_type_guess():
+    """`/ping` is answered by every *arr, so on an unknown port it proves presence but
+    not identity. Guessing a type from it would be a confident lie."""
     respx.get("http://host.test:9999/ping").mock(
         return_value=httpx.Response(200, json=fx.PING_OK)
     )
+    _no_jellyseerr("host.test", 9999)
     found = await probe_endpoint("host.test", 9999)
     assert found is not None
     assert found.service_type is None
+
+
+@respx.mock
+async def test_jellyseerr_is_found_without_ping_and_on_a_moved_port():
+    """Regression from the live stack.
+
+    Jellyseerr 307-redirects `/ping`, so a /ping-only probe never found it, and it was
+    running on 5057 rather than the documented 5055 — so the default port list missed it
+    as well. Its `/api/v1/status` is unauthenticated and unique to it.
+    """
+    respx.get("http://host.test:5057/ping").mock(return_value=httpx.Response(307))
+    respx.get("http://host.test:5057/api/v1/status").mock(
+        return_value=httpx.Response(
+            200, json={"version": "3.3.0", "commitTag": "abc", "updateAvailable": False}
+        )
+    )
+    found = await probe_endpoint("host.test", 5057)
+
+    assert found is not None
+    assert found.service_type == "jellyseerr"
 
 
 @respx.mock
@@ -90,6 +124,8 @@ async def test_scan_host_finds_the_whole_stack():
         respx.get(f"http://host.test:{port}/ping").mock(
             return_value=httpx.Response(200, json=fx.PING_OK)
         )
+    # Everything else on every probed port is closed.
+    respx.route(host="host.test").mock(side_effect=httpx.ConnectError("refused"))
     found = await scan_host("host.test")
 
     assert {f.service_type for f in found} == {"sonarr", "radarr", "prowlarr"}
@@ -105,6 +141,7 @@ async def test_scan_host_tolerates_a_partially_present_stack():
         side_effect=httpx.ConnectError("refused")
     )
     respx.get("http://host.test:9696/ping").mock(side_effect=httpx.ReadTimeout("slow"))
+    respx.route(host="host.test").mock(side_effect=httpx.ConnectError("refused"))
 
     found = await scan_host("host.test")
     assert [f.service_type for f in found] == ["sonarr"]
@@ -212,6 +249,7 @@ def test_scan_endpoint_marks_already_configured_services(admin_client):
         _respx.get("http://host.test:9696/ping").mock(
             side_effect=httpx.ConnectError("refused")
         )
+        _respx.route(host="host.test").mock(side_effect=httpx.ConnectError("refused"))
 
         admin_client.post(
             "/api/services",

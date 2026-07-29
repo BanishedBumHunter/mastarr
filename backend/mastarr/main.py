@@ -68,9 +68,19 @@ async def lifespan(app: FastAPI):
     init_db(settings)
 
     with Session(get_engine()) as session:
+        # Install the database layer of the config before anything reads settings.
+        from .config import set_db_overrides
+        from .settings_store import read_all
+
+        set_db_overrides(read_all(session))
+
         count = sync_config_services(session)
         if count:
             log.info("Reconciled %d service(s) from config file", count)
+
+    # Re-read after the DB layer landed, so the log level below reflects it.
+    settings = get_settings()
+    configure_logging(settings.log_level)
 
     log.info("Mastarr %s ready — data dir %s", __version__, settings.data_dir)
     yield
