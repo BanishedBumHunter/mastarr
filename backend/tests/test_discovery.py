@@ -20,11 +20,11 @@ from . import fixtures as fx
 
 
 def test_split_target_handles_bare_host():
-    assert _split_target("192.168.1.250") == ("http", "192.168.1.250", None)
+    assert _split_target("192.168.1.10") == ("http", "192.168.1.10", None)
 
 
 def test_split_target_handles_host_and_port():
-    assert _split_target("192.168.1.250:8989") == ("http", "192.168.1.250", 8989)
+    assert _split_target("192.168.1.10:8989") == ("http", "192.168.1.10", 8989)
 
 
 def test_split_target_handles_full_url():
@@ -119,7 +119,7 @@ async def test_jellyseerr_is_found_without_ping_and_on_a_moved_port():
 
 @respx.mock
 async def test_scan_host_finds_the_whole_stack():
-    """Mirrors the real 192.168.1.250 layout."""
+    """Mirrors a typical single-host layout."""
     for port in (8989, 7878, 9696):
         respx.get(f"http://host.test:{port}/ping").mock(
             return_value=httpx.Response(200, json=fx.PING_OK)

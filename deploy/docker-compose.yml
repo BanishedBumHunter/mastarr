@@ -36,7 +36,7 @@ services:
       MASTARR_LOG_LEVEL: INFO
 
       # Hosts the "Scan" button probes when the form is left empty.
-      # MASTARR_DISCOVERY_HOSTS: '["192.168.1.250"]'
+      # MASTARR_DISCOVERY_HOSTS: '["192.168.1.10"]'
 
       # --- Declarative config (optional) ----------------------------------
       # Mount config.yml below and point at it to version-control the whole setup.

@@ -118,7 +118,7 @@ function DiscoveryPanel() {
           <input
             id="hosts"
             value={hosts}
-            placeholder="192.168.1.250, nas.local"
+            placeholder="192.168.1.10, nas.local"
             onChange={(event) => setHosts(event.target.value)}
           />
         </div>
@@ -303,7 +303,7 @@ function AddServiceForm() {
             id="surl"
             value={form.url}
             placeholder={
-              selected ? `http://192.168.1.250:${selected.default_port}` : 'http://host:port'
+              selected ? `http://192.168.1.10:${selected.default_port}` : 'http://host:port'
             }
             onChange={(event) => setForm((prev) => ({ ...prev, url: event.target.value }))}
           />
