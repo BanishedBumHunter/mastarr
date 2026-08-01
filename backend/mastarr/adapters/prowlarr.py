@@ -45,6 +45,14 @@ class ProwlarrAdapter(ArrAdapter):
             "search_command",
             "custom_formats",
             "naming",
+            # Verified by probing a live Prowlarr 2.5 — each of these 404s.
+            "import_lists",
+            "metadata",
+            "delay_profiles",
+            "release_profiles",
+            "quality_definitions",
+            "media_management",
+            "indexer_options",
         }
     )
 

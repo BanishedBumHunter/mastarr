@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from .. import __version__
 from . import (
     activity,
+    automation,
     auth,
     calendar,
     config,
@@ -13,6 +14,7 @@ from . import (
     discovery,
     images,
     library,
+    providers,
     services,
     settings,
     users,
@@ -43,5 +45,7 @@ api_router.include_router(discover.router)
 api_router.include_router(images.router)
 api_router.include_router(settings.router)
 api_router.include_router(config.router)
+api_router.include_router(providers.router)
+api_router.include_router(automation.router)
 
 __all__ = ["api_router"]

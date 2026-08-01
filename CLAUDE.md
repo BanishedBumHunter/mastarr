@@ -101,7 +101,27 @@ ids). The *arrs regenerate all of it, and some is service-branded — a Sonarr c
 format's `infoLink` points at the Sonarr wiki and Radarr rewrites it on save. Comparing it
 made a correctly-synced item show a permanent "update available".
 
-### 12. Aggregated views report what's missing
+### 12. The services describe their own forms — use that
+
+`GET /{resource}/schema` returns every implementation a service supports, with typed,
+labelled fields and a `privacy` flag. **69 provider types** across download clients,
+indexers, import lists, notifications and metadata. One generic renderer covers all of
+them, and a provider added by an upstream release appears with no code change. Never
+hand-build a provider form.
+
+### 13. Never forward a service's secrets to the browser
+
+The *arrs return stored credentials in provider payloads. `mask_secrets` replaces anything
+with `privacy` in {apiKey, password, userName} with `********` on the way out, and
+`restore_secrets` puts the real value back if the form echoes the placeholder.
+
+Verified against a live Sonarr by writing a canary key, editing an unrelated field, and
+querying the resulting SQLite row **with the WAL applied**: the *arrs treat `********` as
+"unchanged" and the stored secret survives. An earlier version of that experiment grepped
+only `sonarr.db`, missed the WAL, and wrongly concluded the secret was destroyed — if you
+re-test this, include `sonarr.db-wal`.
+
+### 14. Aggregated views report what's missing
 
 When a fan-out view drops a service, say so (`failures[]` → `PartialWarning`). Silently
 returning partial data is worse than an error: the user believes their library really is
@@ -118,6 +138,22 @@ that small.
   lists and connection settings stay in the native apps, reached by deep link from the item
   detail view. That is four admin UIs' worth of surface for a handful of set-once settings,
   and the part most likely to break on upstream changes.
+
+## What the *arrs don't do, and Mastarr does
+
+- **Nothing ever re-searches for upgrades.** Quality profiles have `upgradeAllowed` +
+  `cutoff`, but the scheduled task list has no cutoff sweep — upgrades only happen if a
+  better release lands in the RSS window. `sweeper.py` issues `CutoffUnmet*Search` on a
+  schedule. (Reference stack: 940 Sonarr episodes below cutoff, never re-searched.)
+- **No *arr can reject a release by date.** Custom formats match names, not upload dates.
+  `grab_guard.py` catches an `onGrab` webhook and removes + blocklists a fresh upload of a
+  much older title. It is **catch-and-undo, not prevention** — the *arr grabs autonomously
+  and nothing asks Mastarr first. Say so in any UI that exposes it.
+
+Both are **off by default** and both keep a visible record. Anything that deletes downloads
+or fires searches across every service must be opt-in.
+
+Note `wanted/cutoff` is the correct endpoint — `wanted/cutoffunmet` 404s.
 
 ## Build priorities
 

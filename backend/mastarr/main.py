@@ -82,8 +82,14 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     configure_logging(settings.log_level)
 
+    from . import sweeper
+
+    sweeper.start()
     log.info("Mastarr %s ready — data dir %s", __version__, settings.data_dir)
-    yield
+    try:
+        yield
+    finally:
+        await sweeper.stop()
 
 
 app = FastAPI(

@@ -82,7 +82,47 @@ CONFIG_GUARD: dict[str, str] = {
     "download_client": "download_clients",
     "indexer": "indexers",
     "naming": "naming",
+    "import_list": "import_lists",
+    "notification": "notifications",
+    "metadata": "metadata",
+    "delay_profile": "delay_profiles",
+    "release_profile": "release_profiles",
+    "quality_definition": "quality_definitions",
+    "tag": "tags",
 }
+
+# Resources that are *provider* types: the service offers a `/schema` listing every
+# implementation it supports, with full field definitions. One generic form renderer
+# handles all of them, so a provider added by an upstream release appears in Mastarr with
+# no code change.
+PROVIDER_ENDPOINTS: dict[str, str] = {
+    "download_client": "downloadclient",
+    "indexer": "indexer",
+    "import_list": "importlist",
+    "notification": "notification",
+    "metadata": "metadata",
+}
+
+# Non-provider config collections: plain lists with a fixed shape, no /schema.
+CONFIG_ENDPOINTS_EXTRA: dict[str, str] = {
+    "delay_profile": "delayprofile",
+    "release_profile": "releaseprofile",
+    "quality_definition": "qualitydefinition",
+    "tag": "tag",
+}
+
+# Flat singleton settings objects, fetched and PUT whole.
+SINGLETON_CONFIGS: dict[str, str] = {
+    "naming": "config/naming",
+    "media_management": "config/mediamanagement",
+    "indexer_options": "config/indexer",
+    "ui": "config/ui",
+}
+
+# Field `privacy` values that mark a secret. These are masked on the way out and must
+# never be returned to the browser or written to a log.
+SECRET_PRIVACY = frozenset({"apiKey", "password", "userName"})
+SECRET_PLACEHOLDER = "********"
 
 
 class ArrAdapter(ABC):
@@ -587,6 +627,145 @@ class ArrAdapter(ABC):
         merged = {**current, **payload}
         result = await self._request(
             "PUT", f"config/naming/{current.get('id', 1)}", json=merged
+        )
+        return result if isinstance(result, dict) else merged
+
+    # ------------------------------------------------- provider configuration
+
+    def _config_path(self, resource: str) -> str:
+        """Endpoint for a config resource, whichever family it belongs to."""
+        for table in (CONFIG_ENDPOINTS, PROVIDER_ENDPOINTS, CONFIG_ENDPOINTS_EXTRA):
+            if resource in table:
+                return table[resource]
+        raise UnsupportedOperation(
+            f"Unknown config resource '{resource}'.", service=self.name
+        )
+
+    @staticmethod
+    def mask_secrets(record: dict[str, Any]) -> dict[str, Any]:
+        """Replace secret field values with a placeholder.
+
+        Applied to everything leaving the adapter for the UI. The *arrs happily return
+        stored passwords and API keys in plaintext; forwarding those to a browser would
+        undo the care taken with Mastarr's own credential handling.
+        """
+        masked = dict(record)
+        fields = []
+        for field in record.get("fields", []) or []:
+            field = dict(field)
+            if field.get("privacy") in SECRET_PRIVACY and field.get("value") not in (
+                None,
+                "",
+            ):
+                field["value"] = SECRET_PLACEHOLDER
+            fields.append(field)
+        if fields:
+            masked["fields"] = fields
+        return masked
+
+    @staticmethod
+    def restore_secrets(
+        submitted: dict[str, Any], existing: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Put back any secret the UI sent us as the placeholder.
+
+        The browser never receives real secrets, so on edit it echoes the placeholder.
+        Writing that through would replace a working password with literal asterisks.
+        """
+        current = {f.get("name"): f.get("value") for f in existing.get("fields", []) or []}
+        merged = dict(submitted)
+        fields = []
+        for field in submitted.get("fields", []) or []:
+            field = dict(field)
+            if (
+                field.get("privacy") in SECRET_PRIVACY
+                and field.get("value") == SECRET_PLACEHOLDER
+            ):
+                field["value"] = current.get(field.get("name"))
+            fields.append(field)
+        if fields:
+            merged["fields"] = fields
+        return merged
+
+    async def provider_schema(self, resource: str) -> list[dict[str, Any]]:
+        """Every implementation this service supports, with its field definitions."""
+        self._guard(CONFIG_GUARD.get(resource, resource))
+        if resource not in PROVIDER_ENDPOINTS:
+            raise UnsupportedOperation(
+                f"{resource} is not a provider type.", service=self.name
+            )
+        data = await self._request("GET", f"{PROVIDER_ENDPOINTS[resource]}/schema")
+        return data if isinstance(data, list) else []
+
+    async def list_config(self, resource: str) -> list[dict[str, Any]]:
+        """Configured instances, with secrets masked."""
+        self._guard(CONFIG_GUARD.get(resource, resource))
+        data = await self._request("GET", self._config_path(resource))
+        return [self.mask_secrets(r) for r in data] if isinstance(data, list) else []
+
+    async def create_provider(
+        self, resource: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        self._guard(CONFIG_GUARD.get(resource, resource))
+        body = {k: v for k, v in payload.items() if k != "id"}
+        result = await self._request("POST", self._config_path(resource), json=body)
+        return self.mask_secrets(result) if isinstance(result, dict) else {}
+
+    async def update_provider(
+        self, resource: str, item_id: int, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        path = self._config_path(resource)
+        self._guard(CONFIG_GUARD.get(resource, resource))
+        existing = await self._request("GET", f"{path}/{item_id}")
+        body = self.restore_secrets(payload, existing if isinstance(existing, dict) else {})
+        body["id"] = item_id
+        result = await self._request("PUT", f"{path}/{item_id}", json=body)
+        return self.mask_secrets(result) if isinstance(result, dict) else {}
+
+    async def delete_provider(self, resource: str, item_id: int) -> None:
+        self._guard(CONFIG_GUARD.get(resource, resource))
+        await self._request("DELETE", f"{self._config_path(resource)}/{item_id}")
+
+    async def test_provider(self, resource: str, payload: dict[str, Any]) -> tuple[bool, str]:
+        """Ask the service to validate a provider config before saving it.
+
+        Returns (ok, message) rather than raising: a failed connection test is an expected
+        outcome the form should render, not an error condition.
+        """
+        self._guard(CONFIG_GUARD.get(resource, resource))
+        path = self._config_path(resource)
+        body = dict(payload)
+        if body.get("id"):
+            existing = await self._request("GET", f"{path}/{body['id']}")
+            body = self.restore_secrets(body, existing if isinstance(existing, dict) else {})
+        try:
+            await self._request("POST", f"{path}/test", json=body)
+            return True, "Connection succeeded."
+        except ServiceError as exc:
+            return False, exc.message
+        except AdapterError as exc:
+            return False, exc.message
+
+    # --------------------------------------------------- singleton settings
+
+    async def get_singleton(self, name: str) -> dict[str, Any]:
+        """One of the flat config objects (naming, media management, indexer options)."""
+        self._guard(CONFIG_GUARD.get(name, name))
+        if name not in SINGLETON_CONFIGS:
+            raise UnsupportedOperation(f"Unknown setting group '{name}'.", service=self.name)
+        data = await self._request("GET", SINGLETON_CONFIGS[name])
+        return data if isinstance(data, dict) else {}
+
+    async def update_singleton(self, name: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Merge changes into a singleton and PUT it back.
+
+        Merged rather than replaced so fields Mastarr doesn't render survive the write.
+        """
+        current = await self.get_singleton(name)
+        merged = {**current, **payload}
+        path = SINGLETON_CONFIGS[name]
+        result = await self._request(
+            "PUT", f"{path}/{current.get('id', 1)}", json=merged
         )
         return result if isinstance(result, dict) else merged
 

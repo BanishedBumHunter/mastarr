@@ -356,6 +356,52 @@ export interface IndexerOverview {
   }[]
 }
 
+export interface ProviderField {
+  name: string
+  label?: string
+  helpText?: string
+  value?: unknown
+  type?: string
+  privacy?: string
+  advanced?: boolean
+  selectOptions?: { value: unknown; name: string; hint?: string }[]
+}
+
+export interface ProviderRecord {
+  id?: number
+  name?: string
+  implementation?: string
+  implementationName?: string
+  protocol?: string
+  enable?: boolean
+  fields?: ProviderField[]
+  [k: string]: unknown
+}
+
+export interface SweepService {
+  service_id: number
+  service_name: string
+  below_cutoff: number
+}
+
+export interface SweepStatus {
+  enabled: boolean
+  interval_hours: number
+  last_run: string | null
+  running: boolean
+  services: SweepService[]
+  last_results: { service_name: string; command: string; ok: boolean; detail: string | null }[]
+}
+
+export interface GuardAudit {
+  at: string
+  service_name: string
+  title: string
+  action: 'rejected' | 'allowed' | 'failed'
+  reason: string
+  detail: string | null
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -529,6 +575,58 @@ export const api = {
     }),
 
   indexerOverview: () => request<IndexerOverview>('/api/config/indexers/overview'),
+
+  // ------------------------------------------------ per-service provider config
+
+  providerKinds: () =>
+    request<{ providers: string[]; settings_groups: string[] }>('/api/providers/kinds'),
+  providerSchema: (serviceId: number, resource: string) =>
+    request<ProviderRecord[]>(`/api/providers/${serviceId}/${resource}/schema`),
+  providers: (serviceId: number, resource: string) =>
+    request<ProviderRecord[]>(`/api/providers/${serviceId}/${resource}`),
+  createProviderItem: (serviceId: number, resource: string, data: ProviderRecord) =>
+    request<ProviderRecord>(`/api/providers/${serviceId}/${resource}`, {
+      method: 'POST',
+      ...body({ data }),
+    }),
+  updateProviderItem: (
+    serviceId: number,
+    resource: string,
+    itemId: number,
+    data: ProviderRecord,
+  ) =>
+    request<ProviderRecord>(`/api/providers/${serviceId}/${resource}/${itemId}`, {
+      method: 'PUT',
+      ...body({ data }),
+    }),
+  deleteProviderItem: (serviceId: number, resource: string, itemId: number) =>
+    request<void>(`/api/providers/${serviceId}/${resource}/${itemId}`, { method: 'DELETE' }),
+  testProviderItem: (serviceId: number, resource: string, data: ProviderRecord) =>
+    request<{ ok: boolean; message: string }>(
+      `/api/providers/${serviceId}/${resource}/test`,
+      { method: 'POST', ...body({ data }) },
+    ),
+  settingsGroup: (serviceId: number, name: string) =>
+    request<Record<string, unknown>>(`/api/providers/${serviceId}/settings/${name}`),
+  updateSettingsGroup: (serviceId: number, name: string, data: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/api/providers/${serviceId}/settings/${name}`, {
+      method: 'PUT',
+      ...body({ data }),
+    }),
+
+  // ------------------------------------------------------------- automation
+
+  sweepStatus: () => request<SweepStatus>('/api/automation/sweep'),
+  runSweep: () =>
+    request<{ service_name: string; command: string; ok: boolean; detail: string | null }[]>(
+      '/api/automation/sweep/run',
+      { method: 'POST' },
+    ),
+  guardAudit: () => request<GuardAudit[]>('/api/automation/guard/audit'),
+  guardWebhookUrl: () =>
+    request<{ url: string; method: string; note: string }>(
+      '/api/automation/guard/webhook-url',
+    ),
   testIndexer: (id: number) =>
     request<{ ok: boolean }>(`/api/config/indexers/${id}/test`, { method: 'POST' }),
 }

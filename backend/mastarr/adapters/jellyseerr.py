@@ -64,6 +64,16 @@ class JellyseerrAdapter(ArrAdapter):
             "search_command",
             "custom_formats",
             "naming",
+            "import_lists",
+            "notifications",
+            "metadata",
+            "delay_profiles",
+            "release_profiles",
+            "quality_definitions",
+            "tags",
+            "media_management",
+            "indexer_options",
+            "ui",
         }
     )
 

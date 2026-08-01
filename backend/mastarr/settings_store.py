@@ -50,6 +50,46 @@ EDITABLE: dict[str, dict[str, Any]] = {
         "label": "Default scan hosts",
         "help": "Pre-fills the Scan box on the Services tab. One host per line.",
     },
+    "sweep_enabled": {
+        "type": "bool",
+        "label": "Periodic upgrade sweep",
+        "help": "Ask each service to re-search for anything below its quality cutoff. "
+        "The *arrs never do this on their own — upgrades otherwise only happen if a "
+        "better release appears in the RSS window.",
+    },
+    "sweep_interval_hours": {
+        "type": "int",
+        "label": "Sweep every (hours)",
+        "help": "168 = weekly.",
+        "min": 1,
+        "max": 8760,
+    },
+    "sweep_include_missing": {
+        "type": "bool",
+        "label": "Also search for missing items",
+        "help": "Include a search for monitored items that have no file at all.",
+    },
+    "grab_guard_enabled": {
+        "type": "bool",
+        "label": "Reject suspicious grabs",
+        "help": "Watches grabs and removes ones where a brand-new upload claims to be a "
+        "much older title. Catch-and-undo, not prevention — the service grabs first and "
+        "Mastarr reverses it seconds later.",
+    },
+    "grab_guard_max_days_after_release": {
+        "type": "int",
+        "label": "Flag uploads posted this long after release (days)",
+        "help": "A release posted more than this many days after the media came out.",
+        "min": 1,
+        "max": 36500,
+    },
+    "grab_guard_min_media_age_days": {
+        "type": "int",
+        "label": "Only for media older than (days)",
+        "help": "Protects new releases from being flagged. Anything younger is ignored.",
+        "min": 0,
+        "max": 36500,
+    },
     "log_level": {
         "type": "enum",
         "label": "Log level",
@@ -63,6 +103,10 @@ def _coerce(key: str, value: Any) -> Any:
     """Force a value to the declared type, so the UI can send strings for everything."""
     spec = EDITABLE[key]
     kind = spec["type"]
+    if kind == "bool":
+        if isinstance(value, str):
+            return value.strip().lower() in ("1", "true", "yes", "on")
+        return bool(value)
     if kind == "int":
         return int(value)
     if kind == "float":

@@ -58,6 +58,21 @@ class Settings(BaseSettings):
     # Hosts auto-discovery probes when no explicit target is given.
     discovery_hosts: list[str] = Field(default_factory=list)
 
+    # Periodic upgrade sweep. Off by default — it issues search commands against every
+    # connected service, which is not something to switch on behind someone's back.
+    sweep_enabled: bool = False
+    sweep_interval_hours: int = 168  # weekly
+    sweep_include_missing: bool = True
+
+    # Reactive grab guard. Also off by default: it removes and blocklists downloads, and
+    # nothing that deletes things should be opt-out.
+    grab_guard_enabled: bool = False
+    # Reject a grab when the release was posted this many days *after* the media came out
+    # and the media is older than the floor below. A fresh upload of an old title is a
+    # common signature for a fake or a bad re-encode.
+    grab_guard_max_days_after_release: int = 365
+    grab_guard_min_media_age_days: int = 180
+
     log_level: str = "INFO"
 
     @property
