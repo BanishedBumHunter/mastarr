@@ -93,6 +93,7 @@ export default function ItemDetail({
   const queryClient = useQueryClient()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [picking, setPicking] = useState(false)
+  const [editing, setEditing] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
 
   const { data, isLoading, error, refetch } = useQuery({
@@ -118,6 +119,22 @@ export default function ItemDetail({
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['library'] })
       onClose()
+    },
+  })
+
+  // Only fetched once the editor is opened — profiles and root folders are two extra
+  // round trips per service and most detail views never need them.
+  const options = useQuery({
+    queryKey: ['library-options', serviceId],
+    queryFn: () => api.libraryOptions(serviceId),
+    enabled: editing,
+  })
+  const edit = useMutation({
+    mutationFn: (data: { quality_profile_id?: number; root_folder_path?: string }) =>
+      api.editItem(serviceId, itemId, data),
+    onSuccess: async () => {
+      setEditing(false)
+      await afterChange()
     },
   })
 
@@ -190,6 +207,9 @@ export default function ItemDetail({
               {/* Automatic search takes whatever the profile allows; this shows every
                   release and why each was or wasn't acceptable. */}
               <button onClick={() => setPicking(true)}>Choose a release…</button>
+              <button onClick={() => setEditing((v) => !v)}>
+                {editing ? 'Cancel edit' : 'Edit…'}
+              </button>
               {data?.native_url ? (
                 <a className="btn" href={data.native_url} target="_blank" rel="noreferrer">
                   Open in {item.service_name} ↗
@@ -228,6 +248,59 @@ export default function ItemDetail({
             {monitor.error ? <ErrorBox>{(monitor.error as Error).message}</ErrorBox> : null}
             {search.error ? <ErrorBox>{(search.error as Error).message}</ErrorBox> : null}
             {remove.error ? <ErrorBox>{(remove.error as Error).message}</ErrorBox> : null}
+
+            {editing ? (
+              <div className="section">
+                <h2>Edit</h2>
+                {options.isLoading ? <Spinner label="Loading options…" /> : null}
+                {options.error ? <ErrorBox>{(options.error as Error).message}</ErrorBox> : null}
+                {options.data ? (
+                  <div className="form-row">
+                    <div>
+                      <label htmlFor="qp">Quality profile</label>
+                      <select
+                        id="qp"
+                        defaultValue={String(item.quality_profile_id ?? '')}
+                        onChange={(e) =>
+                          edit.mutate({ quality_profile_id: Number(e.target.value) })
+                        }
+                      >
+                        {options.data.quality_profiles.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                            {p.upgrade_allowed
+                              ? ` — upgrades to ${p.cutoff_name ?? '?'}`
+                              : ' — no upgrades'}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label htmlFor="rf">Root folder</label>
+                      <select
+                        id="rf"
+                        defaultValue=""
+                        onChange={(e) =>
+                          e.target.value && edit.mutate({ root_folder_path: e.target.value })
+                        }
+                      >
+                        <option value="">Leave where it is</option>
+                        {options.data.root_folders.map((f) => (
+                          <option key={f.id} value={f.path}>
+                            {f.path}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                ) : null}
+                <p className="subtle" style={{ marginBottom: 0 }}>
+                  Changing the root folder asks {item.service_name} to move the files. It
+                  does that on its own schedule.
+                </p>
+                {edit.error ? <ErrorBox>{(edit.error as Error).message}</ErrorBox> : null}
+              </div>
+            ) : null}
 
             {picking ? (
               <ReleasePicker

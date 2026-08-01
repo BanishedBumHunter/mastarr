@@ -99,6 +99,10 @@ ADMIN_ENDPOINTS = [
     ("POST", "/api/manual/1/import"),
     ("DELETE", "/api/manual/1/queue/1"),
     ("DELETE", "/api/manual/1/blocklist/1"),
+    ("GET", "/api/library/1/options"),
+    ("GET", "/api/library/1/lookup"),
+    ("POST", "/api/library/1/add"),
+    ("PATCH", "/api/library/1/1"),
 ]
 
 # Reachable by Requesters too. Listed so the split is explicit and reviewable, rather than

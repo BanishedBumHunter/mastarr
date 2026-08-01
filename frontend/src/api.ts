@@ -670,6 +670,33 @@ export const api = {
   guardAudit: () => request<GuardAudit[]>('/api/automation/guard/audit'),
   // ------------------------------------------------------------ manual control
 
+  libraryOptions: (serviceId: number) =>
+    request<{
+      quality_profiles: { id: number; name: string; cutoff_name: string | null; upgrade_allowed: boolean }[]
+      root_folders: { id: number; path: string; accessible: boolean; free_space_bytes: number | null }[]
+    }>(`/api/library/${serviceId}/options`),
+  editItem: (
+    serviceId: number,
+    itemId: number,
+    data: { quality_profile_id?: number; root_folder_path?: string; monitored?: boolean },
+  ) =>
+    request<LibraryItem>(`/api/library/${serviceId}/${itemId}`, {
+      method: 'PATCH',
+      ...body(data),
+    }),
+  lookupMedia: (serviceId: number, term: string) =>
+    request<{ title: string; year: number | null; overview: string | null; poster_url: string | null; remote_id: string | null; already_added: boolean }[]>(
+      `/api/library/${serviceId}/lookup?term=${encodeURIComponent(term)}`,
+    ),
+  addMedia: (
+    serviceId: number,
+    data: { remote_id: string; quality_profile_id: number; root_folder_path: string; monitored?: boolean; search_on_add?: boolean },
+  ) =>
+    request<{ id: number; title: string }>(`/api/library/${serviceId}/add`, {
+      method: 'POST',
+      ...body(data),
+    }),
+
   searchReleases: (serviceId: number, itemId: number, episodeId?: number) =>
     request<Release[]>(
       `/api/manual/${serviceId}/releases?item_id=${itemId}` +

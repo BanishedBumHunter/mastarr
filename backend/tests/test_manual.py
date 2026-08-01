@@ -363,3 +363,98 @@ async def test_blocklist_items_know_their_service():
 
     assert items[0].service_id == 7
     assert items[0].service_name == "My Radarr"
+
+
+# --------------------------------------------------------------- add / edit
+
+
+@respx.mock
+async def test_edit_round_trips_and_moves_the_path_with_the_root_folder():
+    """Changing rootFolderPath alone leaves `path` pointing at the old folder."""
+    record = {
+        "id": 3,
+        "title": "Some Movie",
+        "monitored": True,
+        "qualityProfileId": 1,
+        "path": "/media/movies/Some Movie",
+        "images": [],
+        "hasFile": True,
+        "sizeOnDisk": 1,
+    }
+    respx.get(f"{RADARR_URL}/api/v3/movie/3").mock(
+        return_value=httpx.Response(200, json=record)
+    )
+    put = respx.put(f"{RADARR_URL}/api/v3/movie/3").mock(
+        return_value=httpx.Response(202, json=record)
+    )
+    async with RadarrAdapter(RADARR_URL, "key") as adapter:
+        await adapter.update_item(3, quality_profile_id=5, root_folder_path="/media/4k")
+
+    import json as _json
+
+    sent = _json.loads(put.calls[0].request.content)
+    assert sent["qualityProfileId"] == 5
+    assert sent["rootFolderPath"] == "/media/4k"
+    assert sent["path"] == "/media/4k/Some Movie", "path was left in the old root folder"
+    assert sent["moveFiles"] is True
+    # Untouched fields survive.
+    assert sent["title"] == "Some Movie"
+
+
+@respx.mock
+async def test_edit_only_changes_what_was_asked():
+    record = {
+        "id": 3, "title": "X", "monitored": True, "qualityProfileId": 1,
+        "path": "/m/X", "images": [], "hasFile": False, "sizeOnDisk": 0,
+    }
+    respx.get(f"{RADARR_URL}/api/v3/movie/3").mock(
+        return_value=httpx.Response(200, json=record)
+    )
+    put = respx.put(f"{RADARR_URL}/api/v3/movie/3").mock(
+        return_value=httpx.Response(202, json=record)
+    )
+    async with RadarrAdapter(RADARR_URL, "key") as adapter:
+        await adapter.update_item(3, monitored=False)
+
+    import json as _json
+
+    sent = _json.loads(put.calls[0].request.content)
+    assert sent["monitored"] is False
+    assert sent["qualityProfileId"] == 1  # unchanged
+    assert "moveFiles" not in sent  # no root folder change, so no move
+
+
+@respx.mock
+async def test_add_looks_up_by_remote_id_first():
+    """Synthesising a record the service would reject is worse than asking it."""
+    respx.get(f"{RADARR_URL}/api/v3/movie/lookup").mock(
+        return_value=httpx.Response(200, json=[{"title": "Some Movie", "tmdbId": 99887}])
+    )
+    post = respx.post(f"{RADARR_URL}/api/v3/movie").mock(
+        return_value=httpx.Response(201, json={"id": 12, "title": "Some Movie"})
+    )
+    async with RadarrAdapter(RADARR_URL, "key") as adapter:
+        await adapter.add_item(
+            remote_id="99887", quality_profile_id=1, root_folder_path="/media/movies"
+        )
+
+    import json as _json
+
+    sent = _json.loads(post.calls[0].request.content)
+    assert sent["qualityProfileId"] == 1
+    assert sent["rootFolderPath"] == "/media/movies"
+    assert sent["addOptions"]["searchForMovie"] is True
+
+
+@respx.mock
+async def test_add_reports_clearly_when_nothing_matches():
+    respx.get(f"{SONARR_URL}/api/v3/series/lookup").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    async with SonarrAdapter(SONARR_URL, "key") as adapter:
+        from mastarr.adapters import ServiceError
+
+        with pytest.raises(ServiceError, match="Nothing found"):
+            await adapter.add_item(
+                remote_id="000", quality_profile_id=1, root_folder_path="/tv"
+            )

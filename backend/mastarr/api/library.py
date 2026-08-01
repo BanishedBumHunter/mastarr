@@ -35,6 +35,22 @@ class SeasonMonitorRequest(BaseModel):
     monitored: bool
 
 
+class EditRequest(BaseModel):
+    """Only the fields present are changed."""
+
+    quality_profile_id: int | None = None
+    root_folder_path: str | None = None
+    monitored: bool | None = None
+
+
+class AddRequest(BaseModel):
+    remote_id: str
+    quality_profile_id: int
+    root_folder_path: str
+    monitored: bool = True
+    search_on_add: bool = True
+
+
 def _service_or_404(session: Session, service_id: int) -> Service:
     service = find_service(session, service_id)
     if service is None:
@@ -77,6 +93,56 @@ async def get_library(
     return LibraryOut(items=items, failures=failures)
 
 
+# Literal sub-paths first: `/{service_id}/{item_id}` with an int item_id would
+# otherwise capture /1/options and reject 'options' as a bad integer.
+@router.get("/{service_id}/options")
+async def add_options(
+    service_id: int, session: Session = Depends(get_session)
+) -> dict[str, object]:
+    """Quality profiles and root folders, for the add/edit pickers."""
+    service = _service_or_404(session, service_id)
+
+    async def load(adapter):
+        return {
+            "quality_profiles": [p.model_dump() for p in await adapter.quality_profiles()],
+            "root_folders": [f.model_dump() for f in await adapter.root_folders()],
+        }
+
+    return await _call(service, load)
+
+
+@router.get("/{service_id}/lookup")
+async def lookup(
+    service_id: int,
+    term: str = Query(min_length=1),
+    session: Session = Depends(get_session),
+) -> list[dict]:
+    """Search the service's metadata provider for something to add."""
+    service = _service_or_404(session, service_id)
+    results = await _call(service, lambda a: a.search(term))
+    return [r.model_dump() for r in results]
+
+
+@router.post("/{service_id}/add", status_code=status.HTTP_201_CREATED)
+async def add_item(
+    service_id: int, body: AddRequest, session: Session = Depends(get_session)
+) -> dict:
+    """Add something new to a service's library."""
+    service = _service_or_404(session, service_id)
+    result = await _call(
+        service,
+        lambda a: a.add_item(
+            remote_id=body.remote_id,
+            quality_profile_id=body.quality_profile_id,
+            root_folder_path=body.root_folder_path,
+            monitored=body.monitored,
+            search_on_add=body.search_on_add,
+        ),
+    )
+    invalidate_cache(service_id)
+    return {"id": result.get("id"), "title": result.get("title")}
+
+
 @router.get("/{service_id}/{item_id}", response_model=LibraryDetail)
 async def get_item(
     service_id: int, item_id: int, session: Session = Depends(get_session)
@@ -105,6 +171,28 @@ async def set_monitored(
 ) -> LibraryItem:
     service = _service_or_404(session, service_id)
     result = await _call(service, lambda a: a.set_monitored(item_id, body.monitored))
+    invalidate_cache(service_id)
+    return result
+
+
+@router.patch("/{service_id}/{item_id}", response_model=LibraryItem)
+async def edit_item(
+    service_id: int,
+    item_id: int,
+    body: EditRequest,
+    session: Session = Depends(get_session),
+) -> LibraryItem:
+    """Change quality profile, root folder or monitoring on an existing item."""
+    service = _service_or_404(session, service_id)
+    result = await _call(
+        service,
+        lambda a: a.update_item(
+            item_id,
+            quality_profile_id=body.quality_profile_id,
+            root_folder_path=body.root_folder_path,
+            monitored=body.monitored,
+        ),
+    )
     invalidate_cache(service_id)
     return result
 

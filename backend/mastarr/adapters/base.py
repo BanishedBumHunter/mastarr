@@ -552,6 +552,47 @@ class ArrAdapter(ABC):
         )
         return self._parse_library_item(updated if isinstance(updated, dict) else record)
 
+    async def update_item(
+        self,
+        item_id: int,
+        *,
+        quality_profile_id: int | None = None,
+        root_folder_path: str | None = None,
+        monitored: bool | None = None,
+    ) -> LibraryItem:
+        """Change an existing item's profile, root folder or monitoring.
+
+        Round-trips the whole record like `set_monitored`, so fields Mastarr doesn't model
+        survive. Note that changing the root folder only updates where the service *thinks*
+        the item lives — the service moves files on its own schedule, if configured to.
+        """
+        self._guard("library")
+        if self.media_endpoint is None:
+            raise UnsupportedOperation(
+                f"{self.display_name} manages no media library.", service=self.name
+            )
+        record = await self._request("GET", f"{self.media_endpoint}/{item_id}")
+        if not isinstance(record, dict):
+            raise ServiceError("Unexpected library payload.", service=self.name)
+
+        if quality_profile_id is not None:
+            record["qualityProfileId"] = quality_profile_id
+        if monitored is not None:
+            record["monitored"] = monitored
+        if root_folder_path is not None:
+            record["rootFolderPath"] = root_folder_path
+            # `path` is the authoritative location; leaving it stale would point the
+            # service at the old folder regardless of rootFolderPath.
+            folder = (record.get("path") or "").rstrip("/").rsplit("/", 1)[-1]
+            if folder:
+                record["path"] = f"{root_folder_path.rstrip('/')}/{folder}"
+            record["moveFiles"] = True
+
+        updated = await self._request(
+            "PUT", f"{self.media_endpoint}/{item_id}", json=record
+        )
+        return self._parse_library_item(updated if isinstance(updated, dict) else record)
+
     async def set_season_monitored(
         self, item_id: int, season_number: int, monitored: bool
     ) -> LibraryItem:
