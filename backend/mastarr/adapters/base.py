@@ -30,6 +30,7 @@ from .errors import (
     UnsupportedOperation,
 )
 from .schemas import (
+    BlocklistItem,
     CalendarEntry,
     DiskSpace,
     DownloadClient,
@@ -37,8 +38,10 @@ from .schemas import (
     HealthIssue,
     HealthSeverity,
     HistoryItem,
+    ImportCandidate,
     Indexer,
     LibraryItem,
+    Release,
     QualityProfile,
     QueueItem,
     RootFolder,
@@ -769,6 +772,153 @@ class ArrAdapter(ABC):
         )
         return result if isinstance(result, dict) else merged
 
+    # ------------------------------------------------------- manual control
+
+    # Query param the interactive-search endpoint expects, per media kind.
+    search_param: ClassVar[str] = ""
+
+    async def releases(
+        self, *, item_id: int | None = None, episode_id: int | None = None
+    ) -> list[Release]:
+        """Interactive search: what's actually out there, and why it was or wasn't taken.
+
+        Slow by nature — it queries every indexer synchronously — so callers should expect
+        tens of seconds, not the usual sub-second adapter call.
+        """
+        self._guard("interactive_search")
+        if episode_id is not None:
+            params: dict[str, Any] = {"episodeId": episode_id}
+        elif item_id is not None and self.search_param:
+            params = {self.search_param: item_id}
+        else:
+            raise UnsupportedOperation(
+                f"{self.display_name} cannot search interactively.", service=self.name
+            )
+
+        data = await self._request("GET", "release", params=params)
+        if not isinstance(data, list):
+            return []
+        return [self._parse_release(r) for r in data]
+
+    def _parse_release(self, item: dict[str, Any]) -> Release:
+        quality = (item.get("quality") or {}).get("quality") or {}
+        return Release(
+            guid=item.get("guid") or "",
+            title=item.get("title") or "",
+            indexer=item.get("indexer"),
+            indexer_id=item.get("indexerId"),
+            protocol=item.get("protocol"),
+            quality=quality.get("name"),
+            size_bytes=int(item.get("size") or 0),
+            seeders=item.get("seeders"),
+            leechers=item.get("leechers"),
+            age_hours=item.get("ageHours"),
+            published=self._parse_dt(item.get("publishDate")),
+            rejected=bool(item.get("rejected", False)),
+            rejections=[str(r) for r in (item.get("rejections") or [])],
+            download_allowed=bool(item.get("downloadAllowed", True)),
+            custom_format_score=item.get("customFormatScore"),
+        )
+
+    async def grab_release(self, guid: str, indexer_id: int) -> None:
+        """Take a specific release, overriding whatever the service would have chosen."""
+        self._guard("interactive_search")
+        await self._request(
+            "POST", "release", json={"guid": guid, "indexerId": indexer_id}
+        )
+
+    async def import_candidates(self, folder: str) -> list[ImportCandidate]:
+        """Files in a folder the service could import, with its own verdict on each."""
+        self._guard("manual_import")
+        data = await self._request("GET", "manualimport", params={"folder": folder})
+        if not isinstance(data, list):
+            return []
+        return [self._parse_import_candidate(i) for i in data]
+
+    def _parse_import_candidate(self, item: dict[str, Any]) -> ImportCandidate:
+        quality = (item.get("quality") or {}).get("quality") or {}
+        media = item.get(self.media_endpoint or "") or {}
+        path = item.get("path") or ""
+        return ImportCandidate(
+            path=path,
+            name=path.rsplit("/", 1)[-1],
+            size_bytes=int(item.get("size") or 0),
+            quality=quality.get("name"),
+            media_title=media.get("title"),
+            media_id=media.get("id"),
+            season_number=item.get("seasonNumber"),
+            episode_ids=[e.get("id") for e in (item.get("episodes") or []) if e.get("id")],
+            rejections=[
+                str(r.get("reason") if isinstance(r, dict) else r)
+                for r in (item.get("rejections") or [])
+            ],
+        )
+
+    async def do_import(self, files: list[dict[str, Any]], *, move: bool = True) -> str:
+        """Import chosen files. `move` copies-and-removes; False leaves the source alone."""
+        self._guard("manual_import")
+        payload = {
+            "name": "ManualImport",
+            "files": files,
+            "importMode": "move" if move else "copy",
+        }
+        result = await self._request("POST", "command", json=payload)
+        return str((result or {}).get("status", "queued")) if isinstance(result, dict) else "queued"
+
+    async def queue_remove(
+        self,
+        queue_id: int,
+        *,
+        remove_from_client: bool = True,
+        blocklist: bool = False,
+    ) -> None:
+        """Drop a queue item.
+
+        `blocklist=True` is what stops the same release being picked straight back up on
+        the next RSS pass — without it, removing something usually just delays it.
+        """
+        self._guard("queue")
+        await self._request(
+            "DELETE",
+            f"queue/{queue_id}",
+            params={
+                "removeFromClient": str(remove_from_client).lower(),
+                "blocklist": str(blocklist).lower(),
+            },
+        )
+
+    async def blocklist(self, page_size: int = 50) -> list[BlocklistItem]:
+        self._guard("blocklist")
+        data = await self._request(
+            "GET", "blocklist", params={"pageSize": page_size, "sortKey": "date",
+                                        "sortDirection": "descending"}
+        )
+        records = data.get("records", []) if isinstance(data, dict) else (data or [])
+        out: list[BlocklistItem] = []
+        for item in records:
+            quality = (item.get("quality") or {}).get("quality") or {}
+            media = item.get(self.media_endpoint or "") or {}
+            out.append(
+                BlocklistItem(
+                    id=item.get("id", 0),
+                    service_id=self.service_id,
+                    service_name=self.name,
+                    title=item.get("sourceTitle") or "",
+                    media_title=media.get("title"),
+                    quality=quality.get("name"),
+                    indexer=item.get("indexer"),
+                    protocol=item.get("protocol"),
+                    date=self._parse_dt(item.get("date")),
+                    message=item.get("message"),
+                )
+            )
+        return out
+
+    async def blocklist_remove(self, item_id: int) -> None:
+        """Un-blocklist, so the release becomes grabbable again."""
+        self._guard("blocklist")
+        await self._request("DELETE", f"blocklist/{item_id}")
+
     async def image_bytes(self, path: str) -> tuple[bytes, str]:
         """Fetch a poster/banner for the image proxy. Returns (body, content-type)."""
         client = await self._get_client()
@@ -913,6 +1063,8 @@ class ArrAdapter(ABC):
             error = first[0] if first else None
         return QueueItem(
             id=item.get("id", 0),
+            service_id=self.service_id,
+            service_name=self.name,
             title=item.get("title") or "",
             status=item.get("status") or "unknown",
             media_title=self._media_title(item),

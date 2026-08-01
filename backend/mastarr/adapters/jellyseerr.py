@@ -73,6 +73,9 @@ class JellyseerrAdapter(ArrAdapter):
             "tags",
             "media_management",
             "indexer_options",
+            "interactive_search",
+            "manual_import",
+            "blocklist",
             "ui",
         }
     )

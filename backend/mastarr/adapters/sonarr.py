@@ -18,6 +18,7 @@ class SonarrAdapter(ArrAdapter):
     media_kind: ClassVar[str] = "series"
     # Without this the calendar returns bare episode records with no series title.
     calendar_params: ClassVar[dict[str, str]] = {"includeSeries": "true"}
+    search_param: ClassVar[str] = "seriesId"
     search_command: ClassVar[str] = "SeriesSearch"
     native_path: ClassVar[str] = "series"
     remote_id_field: ClassVar[str] = "tvdbId"

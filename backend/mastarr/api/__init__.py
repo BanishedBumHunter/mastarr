@@ -14,6 +14,7 @@ from . import (
     discovery,
     images,
     library,
+    manual,
     providers,
     services,
     settings,
@@ -47,5 +48,6 @@ api_router.include_router(settings.router)
 api_router.include_router(config.router)
 api_router.include_router(providers.router)
 api_router.include_router(automation.router)
+api_router.include_router(manual.router)
 
 __all__ = ["api_router"]

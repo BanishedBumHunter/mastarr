@@ -139,6 +139,20 @@ that small.
   detail view. That is four admin UIs' worth of surface for a handful of set-once settings,
   and the part most likely to break on upstream changes.
 
+## Manual control overrides the service, deliberately
+
+Interactive search (`release?seriesId=/movieId=/episodeId=`) returns every candidate with
+the service's own `rejected` flag and `rejections` reasons. Surface those: "nothing
+downloaded" is a mystery, "rejected because it exceeds your size limit" is a decision. A
+rejected release must stay grabbable — overriding the profile is the point.
+
+Queue removal and blocklisting are **separate choices**. Removing without blocklisting
+usually just delays a re-grab on the next RSS pass, so the UI offers both and says which
+is which.
+
+Aggregated `QueueItem` and `BlocklistItem` carry `service_id`/`service_name`. Once several
+services are merged into one list, an item without an origin is one you cannot act on.
+
 ## What the *arrs don't do, and Mastarr does
 
 - **Nothing ever re-searches for upgrades.** Quality profiles have `upgradeAllowed` +
@@ -159,7 +173,8 @@ Note `wanted/cutoff` is the correct endpoint — `wanted/cutoffunmet` 404s.
 
 1. ~~Adapter layer + auto-discovery + health dashboard~~ ✅
 2. ~~Auth + two-role model with permission seam~~ ✅
-3. ~~Unified queue/history/activity views~~ ✅
+3. ~~Unified queue/history/activity views~~ ✅ (+ interactive search, manual import,
+   queue actions, blocklist)
 4. ~~Cross-stack config: profiles, custom formats, root folders, clients, naming~~ ✅
 5. ~~Indexer management via Prowlarr~~ ✅
 6. ~~Requests via Jellyseerr/Overseerr~~ ✅

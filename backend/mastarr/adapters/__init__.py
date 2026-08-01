@@ -24,6 +24,7 @@ from .registry import (
     type_for_app_name,
 )
 from .schemas import (
+    BlocklistItem,
     CalendarEntry,
     DateKind,
     DiscoverPage,
@@ -34,12 +35,14 @@ from .schemas import (
     HealthSeverity,
     Episode,
     HistoryItem,
+    ImportCandidate,
     Indexer,
     LibraryDetail,
     LibraryItem,
     MediaRequest,
     QualityProfile,
     QueueItem,
+    Release,
     RootFolder,
     Season,
     SearchResult,
@@ -51,6 +54,9 @@ from .sonarr import SonarrAdapter
 
 __all__ = [
     "ADAPTERS",
+    "BlocklistItem",
+    "ImportCandidate",
+    "Release",
     "CalendarEntry",
     "DateKind",
     "DiscoverPage",

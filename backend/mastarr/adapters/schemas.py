@@ -72,9 +72,16 @@ class DiskSpace(BaseModel):
 
 
 class QueueItem(BaseModel):
-    """A download in flight, flattened across service types."""
+    """A download in flight, flattened across service types.
+
+    Carries its origin: once queues from several services are merged into one list, an
+    item with no service is one you can't act on — remove and blocklist both need to know
+    which service to call.
+    """
 
     id: int
+    service_id: int | None = None
+    service_name: str | None = None
     title: str
     status: str
     media_title: str | None = None
@@ -338,3 +345,68 @@ class DiscoverPage(BaseModel):
     total_pages: int = 1
     total_results: int = 0
     results: list[DiscoverResult] = Field(default_factory=list)
+
+
+# ------------------------------------------------------------ manual control
+
+
+class Release(BaseModel):
+    """One candidate release from an interactive search.
+
+    `rejected` plus `rejections` is the important part: the service will happily tell you
+    *why* it won't auto-grab something, and surfacing that turns "nothing downloaded" from
+    a mystery into a decision.
+    """
+
+    guid: str
+    title: str
+    indexer: str | None = None
+    indexer_id: int | None = None
+    protocol: str | None = None
+    quality: str | None = None
+    size_bytes: int = 0
+    seeders: int | None = None
+    leechers: int | None = None
+    age_hours: float | None = None
+    published: datetime | None = None
+    rejected: bool = False
+    rejections: list[str] = Field(default_factory=list)
+    download_allowed: bool = True
+    custom_format_score: int | None = None
+
+    @property
+    def age_days(self) -> float | None:
+        return round(self.age_hours / 24, 1) if self.age_hours is not None else None
+
+
+class ImportCandidate(BaseModel):
+    """A file sitting on disk that could be imported."""
+
+    path: str
+    name: str
+    size_bytes: int = 0
+    quality: str | None = None
+    # What the service thinks it belongs to; may be absent when it can't tell.
+    media_title: str | None = None
+    media_id: int | None = None
+    season_number: int | None = None
+    episode_ids: list[int] = Field(default_factory=list)
+    rejections: list[str] = Field(default_factory=list)
+
+    @property
+    def importable(self) -> bool:
+        """No rejections and enough identification to file it somewhere."""
+        return not self.rejections and self.media_id is not None
+
+
+class BlocklistItem(BaseModel):
+    id: int
+    service_id: int | None = None
+    service_name: str | None = None
+    title: str
+    media_title: str | None = None
+    quality: str | None = None
+    indexer: str | None = None
+    protocol: str | None = None
+    date: datetime | None = None
+    message: str | None = None

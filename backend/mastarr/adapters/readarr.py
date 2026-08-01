@@ -19,6 +19,7 @@ class ReadarrAdapter(ArrAdapter):
     app_name: ClassVar[str] = "readarr"
     media_endpoint: ClassVar[str | None] = "author"
     media_kind: ClassVar[str] = "author"
+    search_param: ClassVar[str] = "authorId"
     search_command: ClassVar[str] = "AuthorSearch"
     native_path: ClassVar[str] = "author"
     unsupported: ClassVar[frozenset[str]] = frozenset({"seasons"})

@@ -92,6 +92,13 @@ ADMIN_ENDPOINTS = [
     ("POST", "/api/automation/sweep/run"),
     ("GET", "/api/automation/guard/audit"),
     ("GET", "/api/automation/guard/webhook-url"),
+    ("GET", "/api/manual/blocklist"),
+    ("GET", "/api/manual/1/releases"),
+    ("POST", "/api/manual/1/grab"),
+    ("GET", "/api/manual/1/import"),
+    ("POST", "/api/manual/1/import"),
+    ("DELETE", "/api/manual/1/queue/1"),
+    ("DELETE", "/api/manual/1/blocklist/1"),
 ]
 
 # Reachable by Requesters too. Listed so the split is explicit and reviewable, rather than

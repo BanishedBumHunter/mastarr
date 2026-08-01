@@ -19,6 +19,7 @@ class LidarrAdapter(ArrAdapter):
     app_name: ClassVar[str] = "lidarr"
     media_endpoint: ClassVar[str | None] = "artist"
     media_kind: ClassVar[str] = "artist"
+    search_param: ClassVar[str] = "artistId"
     search_command: ClassVar[str] = "ArtistSearch"
     native_path: ClassVar[str] = "artist"
     unsupported: ClassVar[frozenset[str]] = frozenset({"seasons"})

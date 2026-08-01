@@ -12,6 +12,7 @@ import { useState } from 'react'
 import { api, formatBytes, posterUrl } from '../api'
 import type { Season } from '../api'
 import { ErrorBox, ProgressBar, Spinner } from '../components'
+import ReleasePicker from './ReleasePicker'
 
 function SeasonBlock({
   season,
@@ -91,6 +92,7 @@ export default function ItemDetail({
 }) {
   const queryClient = useQueryClient()
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [picking, setPicking] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
 
   const { data, isLoading, error, refetch } = useQuery({
@@ -185,6 +187,9 @@ export default function ItemDetail({
               >
                 {search.isPending ? 'Queuing…' : 'Search now'}
               </button>
+              {/* Automatic search takes whatever the profile allows; this shows every
+                  release and why each was or wasn't acceptable. */}
+              <button onClick={() => setPicking(true)}>Choose a release…</button>
               {data?.native_url ? (
                 <a className="btn" href={data.native_url} target="_blank" rel="noreferrer">
                   Open in {item.service_name} ↗
@@ -223,6 +228,15 @@ export default function ItemDetail({
             {monitor.error ? <ErrorBox>{(monitor.error as Error).message}</ErrorBox> : null}
             {search.error ? <ErrorBox>{(search.error as Error).message}</ErrorBox> : null}
             {remove.error ? <ErrorBox>{(remove.error as Error).message}</ErrorBox> : null}
+
+            {picking ? (
+              <ReleasePicker
+                serviceId={serviceId}
+                itemId={itemId}
+                title={item.title}
+                onClose={() => setPicking(false)}
+              />
+            ) : null}
 
             {data.seasons.length > 0 ? (
               <div>

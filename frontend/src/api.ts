@@ -8,6 +8,8 @@
 
 export interface QueueItemT {
   id: number
+  service_id: number | null
+  service_name: string | null
   title: string
   status: string
   media_title: string | null
@@ -402,6 +404,49 @@ export interface GuardAudit {
   detail: string | null
 }
 
+export interface Release {
+  guid: string
+  title: string
+  indexer: string | null
+  indexer_id: number | null
+  protocol: string | null
+  quality: string | null
+  size_bytes: number
+  seeders: number | null
+  leechers: number | null
+  age_hours: number | null
+  published: string | null
+  rejected: boolean
+  rejections: string[]
+  download_allowed: boolean
+  custom_format_score: number | null
+}
+
+export interface ImportCandidate {
+  path: string
+  name: string
+  size_bytes: number
+  quality: string | null
+  media_title: string | null
+  media_id: number | null
+  season_number: number | null
+  episode_ids: number[]
+  rejections: string[]
+}
+
+export interface BlocklistItem {
+  id: number
+  service_id: number | null
+  service_name: string | null
+  title: string
+  media_title: string | null
+  quality: string | null
+  indexer: string | null
+  protocol: string | null
+  date: string | null
+  message: string | null
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -623,6 +668,41 @@ export const api = {
       { method: 'POST' },
     ),
   guardAudit: () => request<GuardAudit[]>('/api/automation/guard/audit'),
+  // ------------------------------------------------------------ manual control
+
+  searchReleases: (serviceId: number, itemId: number, episodeId?: number) =>
+    request<Release[]>(
+      `/api/manual/${serviceId}/releases?item_id=${itemId}` +
+        (episodeId ? `&episode_id=${episodeId}` : ''),
+    ),
+  grabRelease: (serviceId: number, guid: string, indexerId: number) =>
+    request<{ status: string }>(`/api/manual/${serviceId}/grab`, {
+      method: 'POST',
+      ...body({ guid, indexer_id: indexerId }),
+    }),
+  importCandidates: (serviceId: number, folder: string) =>
+    request<ImportCandidate[]>(
+      `/api/manual/${serviceId}/import?folder=${encodeURIComponent(folder)}`,
+    ),
+  doImport: (
+    serviceId: number,
+    files: { path: string; media_id: number; quality: object; season_number?: number | null; episode_ids?: number[] }[],
+    move = true,
+  ) =>
+    request<{ status: string }>(`/api/manual/${serviceId}/import`, {
+      method: 'POST',
+      ...body({ files, move }),
+    }),
+  removeFromQueue: (serviceId: number, queueId: number, blocklist = false) =>
+    request<void>(
+      `/api/manual/${serviceId}/queue/${queueId}?blocklist=${blocklist}`,
+      { method: 'DELETE' },
+    ),
+  blocklist: () =>
+    request<{ items: BlocklistItem[]; failures: ServiceFailure[] }>('/api/manual/blocklist'),
+  removeFromBlocklist: (serviceId: number, itemId: number) =>
+    request<void>(`/api/manual/${serviceId}/blocklist/${itemId}`, { method: 'DELETE' }),
+
   guardWebhookUrl: () =>
     request<{ url: string; method: string; note: string }>(
       '/api/automation/guard/webhook-url',

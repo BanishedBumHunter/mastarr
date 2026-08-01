@@ -16,6 +16,7 @@ class RadarrAdapter(ArrAdapter):
     app_name: ClassVar[str] = "radarr"
     media_endpoint: ClassVar[str | None] = "movie"
     media_kind: ClassVar[str] = "movie"
+    search_param: ClassVar[str] = "movieId"
     search_command: ClassVar[str] = "MoviesSearch"
     native_path: ClassVar[str] = "movie"
     remote_id_field: ClassVar[str] = "tmdbId"
