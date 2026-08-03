@@ -18,6 +18,7 @@ from . import (
     providers,
     services,
     settings,
+    system,
     users,
 )
 
@@ -49,5 +50,6 @@ api_router.include_router(config.router)
 api_router.include_router(providers.router)
 api_router.include_router(automation.router)
 api_router.include_router(manual.router)
+api_router.include_router(system.router)
 
 __all__ = ["api_router"]

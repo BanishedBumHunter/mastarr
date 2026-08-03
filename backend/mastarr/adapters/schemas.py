@@ -410,3 +410,81 @@ class BlocklistItem(BaseModel):
     protocol: str | None = None
     date: datetime | None = None
     message: str | None = None
+
+
+# --------------------------------------------------------------- system operations
+
+
+class BackupInfo(BaseModel):
+    id: int
+    service_id: int | None = None
+    service_name: str | None = None
+    name: str
+    path: str = ""
+    size_bytes: int = 0
+    time: datetime | None = None
+    kind: str = ""
+    """`scheduled` or `manual` — the *arrs call this `type`."""
+
+
+class LogRecord(BaseModel):
+    id: int
+    time: datetime | None = None
+    level: str = ""
+    logger: str = ""
+    message: str = ""
+    exception: str | None = None
+
+
+class LogPage(BaseModel):
+    records: list[LogRecord] = Field(default_factory=list)
+    page: int = 1
+    page_size: int = 50
+    total: int = 0
+
+
+class LogFile(BaseModel):
+    id: int
+    filename: str
+    last_write: datetime | None = None
+    download_path: str = ""
+    """Service-reported path, e.g. `/logfile/sonarr.txt`. Never constructed here."""
+
+
+class UpdateInfo(BaseModel):
+    version: str
+    branch: str = ""
+    release_date: datetime | None = None
+    installed: bool = False
+    installable: bool = False
+    latest: bool = False
+    changes_new: list[str] = Field(default_factory=list)
+    changes_fixed: list[str] = Field(default_factory=list)
+
+
+class UpdateStatus(BaseModel):
+    """What one service's update situation looks like, for the fleet view."""
+
+    service_id: int
+    service_name: str
+    service_type: str
+    current_version: str = ""
+    latest_version: str = ""
+    update_available: bool = False
+    installable: bool = False
+    """Whether Mastarr will offer an Install button. See `blocked_reason`."""
+    blocked_reason: str = ""
+    """Why installing is unavailable, in words. Empty when it is available."""
+    release_date: datetime | None = None
+    changes_new: list[str] = Field(default_factory=list)
+    changes_fixed: list[str] = Field(default_factory=list)
+
+
+class ScheduledTask(BaseModel):
+    id: int
+    name: str
+    task_name: str = ""
+    interval_minutes: int = 0
+    last_execution: datetime | None = None
+    last_duration: str | None = None
+    next_execution: datetime | None = None

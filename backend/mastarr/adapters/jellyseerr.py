@@ -50,6 +50,13 @@ class JellyseerrAdapter(ArrAdapter):
     # collecting a permanent "Jellyseerr failed" banner they'd learn to ignore.
     unsupported: ClassVar[frozenset[str]] = frozenset(
         {
+            # Jellyseerr is not an *arr and shares none of the operations surface —
+            # no backups, no /log, no /update, no /system/task, no /system/restart.
+            "backups",
+            "logs",
+            "updates",
+            "tasks",
+            "restart",
             "disk_space",
             "queue",
             "history",

@@ -482,6 +482,90 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 const body = (data: unknown) => ({ body: JSON.stringify(data) })
 
+/** Same error handling as `request`, for endpoints that return plain text (log files). */
+async function requestText(path: string): Promise<string> {
+  const response = await fetch(path, { credentials: 'include' })
+  if (!response.ok) {
+    throw new ApiError(`Request failed (${response.status})`, response.status)
+  }
+  return response.text()
+}
+
+// ------------------------------------------------------------- system operations
+
+export type BackupInfo = {
+  id: number
+  service_id: number | null
+  service_name: string | null
+  name: string
+  path: string
+  size_bytes: number
+  time: string | null
+  kind: string
+}
+
+export type LogRecord = {
+  id: number
+  time: string | null
+  level: string
+  logger: string
+  message: string
+  exception: string | null
+}
+
+export type LogPage = {
+  records: LogRecord[]
+  page: number
+  page_size: number
+  total: number
+}
+
+export type LogFile = {
+  id: number
+  filename: string
+  last_write: string | null
+}
+
+export type UpdateInfo = {
+  version: string
+  branch: string
+  release_date: string | null
+  installed: boolean
+  installable: boolean
+  latest: boolean
+  changes_new: string[]
+  changes_fixed: string[]
+}
+
+export type UpdateStatus = {
+  service_id: number
+  service_name: string
+  service_type: string
+  current_version: string
+  latest_version: string
+  update_available: boolean
+  installable: boolean
+  blocked_reason: string
+  release_date: string | null
+  changes_new: string[]
+  changes_fixed: string[]
+}
+
+export type UpdateFleet = {
+  services: UpdateStatus[]
+  failures: ServiceFailure[]
+}
+
+export type ScheduledTask = {
+  id: number
+  name: string
+  task_name: string
+  interval_minutes: number
+  last_execution: string | null
+  last_duration: string | null
+  next_execution: string | null
+}
+
 export const api = {
   authState: () => request<AuthState>('/api/auth/state'),
   setup: (username: string, password: string) =>
@@ -736,6 +820,38 @@ export const api = {
     request<{ url: string; method: string; note: string }>(
       '/api/automation/guard/webhook-url',
     ),
+
+  // -------------------------------------------------------- system operations
+  fleetUpdates: () => request<UpdateFleet>('/api/system/updates'),
+  serviceUpdates: (serviceId: number) =>
+    request<UpdateInfo[]>(`/api/system/${serviceId}/updates`),
+  installUpdate: (serviceId: number) =>
+    request<{ status: string }>(`/api/system/${serviceId}/updates/install`, {
+      method: 'POST',
+    }),
+  backups: (serviceId: number) => request<BackupInfo[]>(`/api/system/${serviceId}/backups`),
+  createBackup: (serviceId: number) =>
+    request<{ status: string }>(`/api/system/${serviceId}/backups`, { method: 'POST' }),
+  deleteBackup: (serviceId: number, backupId: number) =>
+    request<void>(`/api/system/${serviceId}/backups/${backupId}`, { method: 'DELETE' }),
+  backupDownloadUrl: (serviceId: number, backupId: number) =>
+    `/api/system/${serviceId}/backups/${backupId}/download`,
+  logs: (serviceId: number, page = 1, pageSize = 50, level?: string) =>
+    request<LogPage>(
+      `/api/system/${serviceId}/logs?page=${page}&page_size=${pageSize}` +
+        (level ? `&level=${encodeURIComponent(level)}` : ''),
+    ),
+  logFiles: (serviceId: number) => request<LogFile[]>(`/api/system/${serviceId}/log-files`),
+  logFileText: (serviceId: number, fileId: number) =>
+    requestText(`/api/system/${serviceId}/log-files/${fileId}`),
+  tasks: (serviceId: number) => request<ScheduledTask[]>(`/api/system/${serviceId}/tasks`),
+  runTask: (serviceId: number, taskName: string) =>
+    request<{ status: string }>(`/api/system/${serviceId}/tasks/run`, {
+      method: 'POST',
+      body: JSON.stringify({ task_name: taskName }),
+    }),
+  restartService: (serviceId: number) =>
+    request<{ status: string }>(`/api/system/${serviceId}/restart`, { method: 'POST' }),
   testIndexer: (id: number) =>
     request<{ ok: boolean }>(`/api/config/indexers/${id}/test`, { method: 'POST' }),
 }

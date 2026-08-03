@@ -952,3 +952,65 @@ textarea:disabled {
 .quality-row button.small {
   padding: 2px 7px;
 }
+
+/* --------------------------------------------------- system operations */
+
+.badge.warn {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  border-color: color-mix(in srgb, var(--warn) 30%, transparent);
+}
+.badge.warn::before,
+.badge.bad::before {
+  display: none;
+}
+.badge.bad {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
+/* Log rows are dense on purpose — the whole job is scanning a lot of lines fast. */
+table.grid.logs td {
+  padding-block: 3px;
+  font-size: 0.86rem;
+  vertical-align: top;
+}
+table.grid.logs tr.clickable {
+  cursor: pointer;
+}
+table.grid.logs tr.clickable:hover {
+  background: var(--bg-inset);
+}
+
+.trace {
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-dim);
+}
+/* A rotated log file is megabytes; scroll it in place rather than growing the page. */
+.trace.logfile {
+  max-height: 60vh;
+  overflow: auto;
+  white-space: pre;
+}
+
+.changelog {
+  padding: 4px 0 8px;
+  font-size: 0.88rem;
+}
+.changelog ul {
+  margin: 4px 0 10px;
+  padding-left: 20px;
+  color: var(--text-dim);
+}
+.changelog li {
+  margin-bottom: 2px;
+}

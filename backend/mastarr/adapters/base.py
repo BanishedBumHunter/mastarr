@@ -30,6 +30,7 @@ from .errors import (
     UnsupportedOperation,
 )
 from .schemas import (
+    BackupInfo,
     BlocklistItem,
     CalendarEntry,
     DiskSpace,
@@ -41,7 +42,12 @@ from .schemas import (
     ImportCandidate,
     Indexer,
     LibraryItem,
+    LogFile,
+    LogPage,
+    LogRecord,
     Release,
+    ScheduledTask,
+    UpdateInfo,
     QualityProfile,
     QueueItem,
     RootFolder,
@@ -1240,6 +1246,254 @@ class ArrAdapter(ABC):
             "remote_id": self._remote_id(item),
         }
 
+
+    # -------------------------------------------------------- system operations
+    #
+    # Everything below is the *operations* half of a service, as opposed to its
+    # configuration: backups, logs, updates, scheduled tasks and restart. All five are
+    # guarded separately, because they are not supported as a block — Prowlarr has
+    # backups, logs, updates and tasks but no disk space, and Jellyseerr has none of them.
+
+    async def backups(self) -> list[BackupInfo]:
+        """Backups the service is currently holding, newest first."""
+        self._guard("backups")
+        data = await self._request("GET", "system/backup")
+        if not isinstance(data, list):
+            return []
+        items = [
+            BackupInfo(
+                id=int(item.get("id") or 0),
+                service_id=self.service_id,
+                service_name=self.name,
+                name=item.get("name") or "",
+                path=item.get("path") or "",
+                size_bytes=int(item.get("size") or 0),
+                time=self._parse_dt(item.get("time")),
+                kind=item.get("type") or "",
+            )
+            for item in data
+            if isinstance(item, dict)
+        ]
+        return sorted(items, key=lambda b: (b.time is None, b.time), reverse=True)
+
+    async def create_backup(self) -> str:
+        """Ask the service to take a backup now. Returns the queued command's status."""
+        self._guard("backups")
+        result = await self._request("POST", "command", json={"name": "Backup"})
+        if isinstance(result, dict):
+            return str(result.get("status") or "queued")
+        return "queued"
+
+    async def delete_backup(self, backup_id: int) -> None:
+        self._guard("backups")
+        await self._request("DELETE", f"system/backup/{backup_id}")
+
+    async def backup_bytes(self, path: str) -> tuple[bytes, str]:
+        """Stream one backup out so it can be saved off the box.
+
+        A backup that only exists inside the container it protects is not a backup.
+
+        `path` is the `path` field the service itself reported, e.g.
+        `/backup/scheduled/sonarr_backup_v4.0.18_2026.08.02.zip`. It is not constructed
+        here: the *arrs partition backups into `scheduled/` and `manual/` subdirectories,
+        so `/backup/<name>` 404s for every backup that isn't in the directory you guessed.
+        Verified against live Sonarr, Radarr and Prowlarr.
+        """
+        self._guard("backups")
+        client = await self._get_client()
+        headers = {}
+        if self.api_key:
+            headers["X-Api-Key"] = self.api_key
+        url = f"{self.url}/{path.lstrip('/')}"
+        try:
+            response = await client.get(url, headers=headers, follow_redirects=True)
+        except httpx.HTTPError as exc:
+            raise ServiceUnreachable(
+                f"Could not download backup from {self.url}", service=self.name
+            ) from exc
+        if response.status_code >= 400:
+            raise ServiceError(
+                f"Backup download returned HTTP {response.status_code}", service=self.name
+            )
+        return response.content, "application/zip"
+
+    async def logs(
+        self,
+        *,
+        page: int = 1,
+        page_size: int = 50,
+        level: str | None = None,
+    ) -> LogPage:
+        """Paged log records, newest first.
+
+        Kept paged rather than aggregated across services: logs are the one view where
+        volume is the whole problem, and merging four services' worth into one stream is
+        how you lose the line you were looking for.
+        """
+        self._guard("logs")
+        params: dict[str, Any] = {
+            "page": max(1, page),
+            "pageSize": max(1, min(page_size, 250)),
+            "sortKey": "time",
+            "sortDirection": "descending",
+        }
+        if level:
+            params["level"] = level
+        data = await self._request("GET", "log", params=params)
+        if not isinstance(data, dict):
+            return LogPage(page=page, page_size=page_size)
+        records = [
+            LogRecord(
+                id=int(item.get("id") or 0),
+                time=self._parse_dt(item.get("time")),
+                level=item.get("level") or "",
+                logger=item.get("logger") or "",
+                message=item.get("message") or "",
+                exception=item.get("exception"),
+            )
+            for item in data.get("records") or []
+            if isinstance(item, dict)
+        ]
+        return LogPage(
+            records=records,
+            page=int(data.get("page") or page),
+            page_size=int(data.get("pageSize") or page_size),
+            total=int(data.get("totalRecords") or 0),
+        )
+
+    async def log_files(self) -> list[LogFile]:
+        """The rotated log files on disk, newest first."""
+        self._guard("logs")
+        data = await self._request("GET", "log/file")
+        if not isinstance(data, list):
+            return []
+        files = [
+            LogFile(
+                id=int(item.get("id") or 0),
+                filename=item.get("filename") or "",
+                last_write=self._parse_dt(item.get("lastWriteTime")),
+                download_path=item.get("downloadUrl") or "",
+            )
+            for item in data
+            if isinstance(item, dict) and item.get("filename")
+        ]
+        return sorted(files, key=lambda f: (f.last_write is None, f.last_write), reverse=True)
+
+    async def log_file_text(self, path: str) -> str:
+        """Raw contents of one log file.
+
+        `path` is the service's own `downloadUrl`, e.g. `/logfile/sonarr.txt` — outside
+        the API prefix. Like backups, it comes from the service's listing rather than
+        from the request, so a client can never steer this at an arbitrary path.
+        """
+        self._guard("logs")
+        client = await self._get_client()
+        headers = {}
+        if self.api_key:
+            headers["X-Api-Key"] = self.api_key
+        url = f"{self.url}/{path.lstrip('/')}"
+        try:
+            response = await client.get(url, headers=headers, follow_redirects=True)
+        except httpx.HTTPError as exc:
+            raise ServiceUnreachable(
+                f"Could not read log file from {self.url}", service=self.name
+            ) from exc
+        if response.status_code >= 400:
+            raise ServiceError(
+                f"Log file request returned HTTP {response.status_code}", service=self.name
+            )
+        return response.text
+
+    @staticmethod
+    def _parse_changes(raw: Any) -> tuple[list[str], list[str]]:
+        if not isinstance(raw, dict):
+            return [], []
+        new = [str(x) for x in (raw.get("new") or []) if x]
+        fixed = [str(x) for x in (raw.get("fixed") or []) if x]
+        return new, fixed
+
+    async def updates(self) -> list[UpdateInfo]:
+        """Release history, newest first: what's installed and what's available."""
+        self._guard("updates")
+        data = await self._request("GET", "update")
+        if not isinstance(data, list):
+            return []
+        out: list[UpdateInfo] = []
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            new, fixed = self._parse_changes(item.get("changes"))
+            out.append(
+                UpdateInfo(
+                    version=str(item.get("version") or ""),
+                    branch=item.get("branch") or "",
+                    release_date=self._parse_dt(item.get("releaseDate")),
+                    installed=bool(item.get("installed")),
+                    installable=bool(item.get("installable")),
+                    latest=bool(item.get("latest")),
+                    changes_new=new,
+                    changes_fixed=fixed,
+                )
+            )
+        return out
+
+    async def install_update(self) -> str:
+        """Trigger the service's own updater.
+
+        Only meaningful where the service manages its own binaries. In Docker — which is
+        how this stack runs — updates come from pulling a new image and the *arr reports
+        `installable: false`. The route refuses in that case rather than queuing a command
+        that will quietly do nothing.
+        """
+        self._guard("updates")
+        result = await self._request(
+            "POST", "command", json={"name": "ApplicationUpdate"}
+        )
+        if isinstance(result, dict):
+            return str(result.get("status") or "queued")
+        return "queued"
+
+    async def tasks(self) -> list[ScheduledTask]:
+        """The service's scheduled tasks, soonest-due first."""
+        self._guard("tasks")
+        data = await self._request("GET", "system/task")
+        if not isinstance(data, list):
+            return []
+        items = [
+            ScheduledTask(
+                id=int(item.get("id") or 0),
+                name=item.get("name") or "",
+                task_name=item.get("taskName") or "",
+                interval_minutes=int(item.get("interval") or 0),
+                last_execution=self._parse_dt(item.get("lastExecution")),
+                last_duration=item.get("lastDuration"),
+                next_execution=self._parse_dt(item.get("nextExecution")),
+            )
+            for item in data
+            if isinstance(item, dict)
+        ]
+        return sorted(items, key=lambda t: (t.next_execution is None, t.next_execution))
+
+    async def run_task(self, task_name: str) -> str:
+        """Run a scheduled task now, by its command name (`taskName`, not `name`)."""
+        self._guard("tasks")
+        result = await self._request("POST", "command", json={"name": task_name})
+        if isinstance(result, dict):
+            return str(result.get("status") or "queued")
+        return "queued"
+
+    async def restart(self) -> None:
+        """Restart the service.
+
+        The service tears down its HTTP listener while responding, so a dropped
+        connection here is success, not failure — the caller treats transport errors as
+        expected. Whether it comes back is the container runtime's business, not ours.
+        """
+        self._guard("restart")
+        try:
+            await self._request("POST", "system/restart")
+        except ServiceUnreachable:
+            return
 
 _STATUS_MAP = {
     "unreachable": ServiceStatus.UNREACHABLE,

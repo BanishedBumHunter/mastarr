@@ -16,6 +16,7 @@ import Indexers from './settings/Indexers'
 import ServiceConfig from './settings/ServiceConfig'
 import Automation from './settings/Automation'
 import ManualImport from './settings/ManualImport'
+import System from './settings/System'
 
 type Tab = {
   key: string
@@ -29,6 +30,7 @@ const TABS: Tab[] = [
   { key: 'configure', label: 'Configure services', render: () => <ServiceConfig /> },
   { key: 'automation', label: 'Automation', render: () => <Automation /> },
   { key: 'import', label: 'Manual import', render: () => <ManualImport /> },
+  { key: 'system', label: 'System', render: () => <System /> },
   { key: 'users', label: 'Users', render: () => <Users /> },
   {
     key: 'profiles',

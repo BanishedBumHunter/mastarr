@@ -159,6 +159,26 @@ touched.
 
 `cutoff` may reference a *group* id rather than a quality id. Resolve both.
 
+### 17. Take file paths from the service, never build them
+
+Backups and log files are served from outside the `/api/<version>` prefix, and the *arrs
+partition backups into `/backup/scheduled/` and `/backup/manual/`. Constructing
+`/backup/<name>` 404s for every backup in the other directory — found by live probe after
+all three services returned 404. Use the `path` the service reported (`downloadUrl` for
+log files).
+
+This is also the security property: the client sends an **id**, and the route resolves it
+against the service's own listing. A filename arriving from the browser and being appended
+to a service URL is a traversal.
+
+### 18. `installable` is not permission to install
+
+A containerised *arr reports `installable: true` and will happily unpack a new build over
+itself — which the next `docker run` discards, or which breaks the image. Sonarr's own UI
+gates the Install button on `isDocker`, and so does Mastarr, in both the fleet view and
+the install route. The reference stack reports `isDocker: true`, `installable: true`,
+`updateMechanism: null`, which is exactly the combination that looks safe and isn't.
+
 ## Manual control overrides the service, deliberately
 
 Interactive search (`release?seriesId=/movieId=/episodeId=`) returns every candidate with
