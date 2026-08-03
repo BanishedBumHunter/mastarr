@@ -53,6 +53,8 @@ class ProwlarrAdapter(ArrAdapter):
             "quality_definitions",
             "media_management",
             "indexer_options",
+            "remote_path_mappings",
+            "import_list_exclusions",
             "interactive_search",
             "manual_import",
             "blocklist",

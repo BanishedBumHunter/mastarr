@@ -625,6 +625,8 @@ export const api = {
 
   providerKinds: () =>
     request<{ providers: string[]; settings_groups: string[] }>('/api/providers/kinds'),
+  qualityProfileSchema: (serviceId: number) =>
+    request<Record<string, unknown>>(`/api/providers/${serviceId}/quality-profile-schema`),
   providerSchema: (serviceId: number, resource: string) =>
     request<ProviderRecord[]>(`/api/providers/${serviceId}/${resource}/schema`),
   providers: (serviceId: number, resource: string) =>

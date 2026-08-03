@@ -11,6 +11,11 @@ import { api } from '../../api'
 import { Empty, ErrorBox, Spinner } from '../../components'
 import ProviderList from './ProviderForm'
 import SettingsGroup from './SettingsGroup'
+import QualityProfileEditor from './QualityProfileEditor'
+import QualityDefinitions from './QualityDefinitions'
+import CustomFormatEditor from './CustomFormatEditor'
+import RootFolders from './RootFolders'
+import ListEditor from './ListEditor'
 
 const PROVIDER_TABS: { key: string; label: string }[] = [
   { key: 'download_client', label: 'Download clients' },
@@ -22,8 +27,32 @@ const PROVIDER_TABS: { key: string; label: string }[] = [
 
 const GROUP_TABS: { key: string; label: string }[] = [
   { key: 'indexer_options', label: 'Grab rules' },
+  { key: 'download_client_options', label: 'Download handling' },
   { key: 'media_management', label: 'Media management' },
   { key: 'naming', label: 'Naming' },
+  { key: 'host', label: 'General / host' },
+  { key: 'ui', label: 'UI preferences' },
+]
+
+// Purpose-built editors — these have shapes a generic renderer can't do justice to.
+const CUSTOM_TABS: { key: string; label: string }[] = [
+  { key: 'quality_profile', label: 'Quality profiles' },
+  { key: 'quality_definition', label: 'Quality sizes' },
+  { key: 'custom_format', label: 'Custom formats' },
+  { key: 'root_folder', label: 'Root folders' },
+]
+
+// Flat lists the generic editor handles. `blank` seeds an Add when the list is empty.
+const LIST_TABS: { key: string; label: string; blank?: Record<string, unknown> }[] = [
+  { key: 'tag', label: 'Tags', blank: { label: '' } },
+  { key: 'delay_profile', label: 'Delay profiles' },
+  { key: 'release_profile', label: 'Release profiles' },
+  {
+    key: 'remote_path_mapping',
+    label: 'Remote path mappings',
+    blank: { host: '', remotePath: '', localPath: '' },
+  },
+  { key: 'import_list_exclusion', label: 'Import list exclusions' },
 ]
 
 export default function ServiceConfig() {
@@ -49,6 +78,8 @@ export default function ServiceConfig() {
   const active = serviceId ?? usable[0].id
   const service = usable.find((s) => s.id === active) ?? usable[0]
   const isGroup = GROUP_TABS.some((g) => g.key === section)
+  const custom = CUSTOM_TABS.find((c) => c.key === section)
+  const list = LIST_TABS.find((l) => l.key === section)
 
   return (
     <div className="stack">
@@ -84,6 +115,20 @@ export default function ServiceConfig() {
                   </option>
                 ))}
               </optgroup>
+              <optgroup label="Quality & profiles">
+                {CUSTOM_TABS.map((t) => (
+                  <option key={t.key} value={t.key}>
+                    {t.label}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Lists">
+                {LIST_TABS.map((t) => (
+                  <option key={t.key} value={t.key}>
+                    {t.label}
+                  </option>
+                ))}
+              </optgroup>
               <optgroup label="Settings">
                 {GROUP_TABS.map((t) => (
                   <option key={t.key} value={t.key}>
@@ -103,7 +148,26 @@ export default function ServiceConfig() {
         </p>
       </div>
 
-      {isGroup ? (
+      {custom ? (
+        section === 'quality_profile' ? (
+          <QualityProfileEditor key={service.id} serviceId={service.id} serviceName={service.name} />
+        ) : section === 'quality_definition' ? (
+          <QualityDefinitions key={service.id} serviceId={service.id} serviceName={service.name} />
+        ) : section === 'custom_format' ? (
+          <CustomFormatEditor key={service.id} serviceId={service.id} serviceName={service.name} />
+        ) : (
+          <RootFolders key={service.id} serviceId={service.id} serviceName={service.name} />
+        )
+      ) : list ? (
+        <ListEditor
+          key={`${service.id}-${list.key}`}
+          serviceId={service.id}
+          serviceName={service.name}
+          resource={list.key}
+          title={list.label}
+          blank={list.blank}
+        />
+      ) : isGroup ? (
         <SettingsGroup
           key={`${service.id}-${section}`}
           serviceId={service.id}

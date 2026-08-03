@@ -258,3 +258,102 @@ async def test_indexer_options_are_reachable():
     async with SonarrAdapter(SONARR_URL, "key") as adapter:
         options = await adapter.get_singleton("indexer_options")
     assert options["minimumAge"] == 0
+
+
+# --------------------------------------------------- full settings coverage
+
+
+@pytest.mark.parametrize(
+    "resource",
+    [
+        "quality_definition",
+        "delay_profile",
+        "release_profile",
+        "tag",
+        "remote_path_mapping",
+        "import_list_exclusion",
+    ],
+)
+@respx.mock
+async def test_every_list_resource_is_reachable(resource):
+    """One generic path serves them all — a new flat list needs no new code."""
+    from mastarr.adapters.base import CONFIG_ENDPOINTS_EXTRA
+
+    endpoint = CONFIG_ENDPOINTS_EXTRA[resource]
+    respx.get(f"{SONARR_URL}/api/v3/{endpoint}").mock(
+        return_value=httpx.Response(200, json=[{"id": 1}])
+    )
+    async with SonarrAdapter(SONARR_URL, "key") as adapter:
+        assert await adapter.list_config(resource) == [{"id": 1}]
+
+
+@pytest.mark.parametrize("group", ["download_client_options", "host", "ui"])
+@respx.mock
+async def test_new_settings_groups_are_reachable(group):
+    from mastarr.adapters.base import SINGLETON_CONFIGS
+
+    respx.get(f"{SONARR_URL}/api/v3/{SINGLETON_CONFIGS[group]}").mock(
+        return_value=httpx.Response(200, json={"id": 1, "example": True})
+    )
+    async with SonarrAdapter(SONARR_URL, "key") as adapter:
+        assert (await adapter.get_singleton(group))["example"] is True
+
+
+@respx.mock
+async def test_quality_profile_schema_is_the_blank_template():
+    """The only sane way to create a profile — quality ids are the service's vocabulary."""
+    respx.get(f"{SONARR_URL}/api/v3/qualityprofile/schema").mock(
+        return_value=httpx.Response(
+            200, json={"name": "", "upgradeAllowed": False, "cutoff": 1, "items": [{"quality": {"id": 1, "name": "SDTV"}, "allowed": False}]}
+        )
+    )
+    async with SonarrAdapter(SONARR_URL, "key") as adapter:
+        template = await adapter.quality_profile_schema()
+    assert template["items"][0]["quality"]["name"] == "SDTV"
+
+
+@pytest.mark.parametrize(
+    "service_type,resource,expected",
+    [
+        # Verified by probing a live Prowlarr 2.5 — these 404, these do not.
+        ("prowlarr", "quality_definition", False),
+        ("prowlarr", "delay_profile", False),
+        ("prowlarr", "remote_path_mapping", False),
+        ("prowlarr", "tag", True),
+        ("prowlarr", "download_client_options", True),
+        ("prowlarr", "host", True),
+        ("prowlarr", "ui", True),
+    ],
+)
+def test_prowlarr_support_matches_the_live_probe(service_type, resource, expected):
+    """An earlier pass wrongly marked config/downloadclient and config/host unsupported."""
+    from mastarr.adapters import get_adapter_class
+    from mastarr.adapters.base import CONFIG_GUARD
+
+    cls = get_adapter_class(service_type)
+    supported = CONFIG_GUARD.get(resource, resource) not in cls.unsupported
+    assert supported is expected, f"{service_type}/{resource}"
+
+
+@respx.mock
+async def test_radarr_uses_its_own_name_for_import_list_exclusions():
+    """The *arrs disagree here. Sonarr serves `importlistexclusion`; Radarr 404s on that
+    and uses `exclusions`. Found only by probing both, not one."""
+    from mastarr.adapters import RadarrAdapter
+
+    radarr = respx.get("http://radarr.test:7878/api/v3/exclusions").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    async with RadarrAdapter("http://radarr.test:7878", "key") as adapter:
+        await adapter.list_config("import_list_exclusion")
+    assert radarr.called
+
+
+@respx.mock
+async def test_sonarr_keeps_the_standard_name():
+    route = respx.get(f"{SONARR_URL}/api/v3/importlistexclusion").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    async with SonarrAdapter(SONARR_URL, "key") as adapter:
+        await adapter.list_config("import_list_exclusion")
+    assert route.called

@@ -24,6 +24,11 @@ class RadarrAdapter(ArrAdapter):
     search_on_add_field: ClassVar[str] = "searchForMovie"
     # Movies have no seasons.
     unsupported: ClassVar[frozenset[str]] = frozenset({"seasons"})
+    # Radarr 6.4 serves import-list exclusions at `exclusions`, where Sonarr uses
+    # `importlistexclusion`. Verified live — the Sonarr name 404s here.
+    config_endpoint_overrides: ClassVar[dict[str, str]] = {
+        "import_list_exclusion": "exclusions",
+    }
 
     # Radarr carries up to three release dates on one record. Ordered by how people
     # actually think about "when can I watch this" — a digital release matters more than

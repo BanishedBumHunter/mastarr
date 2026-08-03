@@ -139,6 +139,26 @@ that small.
   detail view. That is four admin UIs' worth of surface for a handful of set-once settings,
   and the part most likely to break on upstream changes.
 
+### 15. Probe every service type, not one
+
+The *arrs disagree with each other in small ways that only show up per-type. Radarr 6.4
+serves import-list exclusions at `exclusions`; Sonarr uses `importlistexclusion` and Radarr
+404s on it. `config_endpoint_overrides` on the adapter is where those differences live.
+
+Two bugs in this codebase came from probing Sonarr and assuming Radarr matched, and from
+declaring a Prowlarr endpoint unsupported without checking (it has `config/downloadclient`
+and `config/host`). Probe each type.
+
+### 16. Quality profile ordering is stored worst-first
+
+`items` is ordered worst→best. Sonarr's and Radarr's own UIs display best-at-top, and so
+does Mastarr — which means the list is reversed on load and again on save. Get that
+backwards and you silently invert someone's entire quality preference while the UI looks
+correct. `toDisplay`/`toStorage` in `QualityProfileEditor` are the only places order is
+touched.
+
+`cutoff` may reference a *group* id rather than a quality id. Resolve both.
+
 ## Manual control overrides the service, deliberately
 
 Interactive search (`release?seriesId=/movieId=/episodeId=`) returns every candidate with

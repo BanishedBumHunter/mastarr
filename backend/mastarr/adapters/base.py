@@ -85,6 +85,11 @@ CONFIG_GUARD: dict[str, str] = {
     "download_client": "download_clients",
     "indexer": "indexers",
     "naming": "naming",
+    "remote_path_mapping": "remote_path_mappings",
+    "import_list_exclusion": "import_list_exclusions",
+    "download_client_options": "download_client_options",
+    "host": "host",
+    "ui": "ui",
     "import_list": "import_lists",
     "notification": "notifications",
     "metadata": "metadata",
@@ -112,6 +117,8 @@ CONFIG_ENDPOINTS_EXTRA: dict[str, str] = {
     "release_profile": "releaseprofile",
     "quality_definition": "qualitydefinition",
     "tag": "tag",
+    "remote_path_mapping": "remotepathmapping",
+    "import_list_exclusion": "importlistexclusion",
 }
 
 # Flat singleton settings objects, fetched and PUT whole.
@@ -119,6 +126,8 @@ SINGLETON_CONFIGS: dict[str, str] = {
     "naming": "config/naming",
     "media_management": "config/mediamanagement",
     "indexer_options": "config/indexer",
+    "download_client_options": "config/downloadclient",
+    "host": "config/host",
     "ui": "config/ui",
 }
 
@@ -676,8 +685,15 @@ class ArrAdapter(ABC):
 
     # ------------------------------------------------- provider configuration
 
+    # Per-type endpoint overrides, for the cases where the *arrs disagree with each other.
+    # Radarr 6.4 serves import-list exclusions at `exclusions`; Sonarr uses
+    # `importlistexclusion`. Same feature, different name.
+    config_endpoint_overrides: ClassVar[dict[str, str]] = {}
+
     def _config_path(self, resource: str) -> str:
         """Endpoint for a config resource, whichever family it belongs to."""
+        if resource in self.config_endpoint_overrides:
+            return self.config_endpoint_overrides[resource]
         for table in (CONFIG_ENDPOINTS, PROVIDER_ENDPOINTS, CONFIG_ENDPOINTS_EXTRA):
             if resource in table:
                 return table[resource]
@@ -730,6 +746,17 @@ class ArrAdapter(ABC):
         if fields:
             merged["fields"] = fields
         return merged
+
+    async def quality_profile_schema(self) -> dict[str, Any]:
+        """A blank profile template.
+
+        Returns all 26 quality entries in the service's canonical order, with the standard
+        groups already formed — which is the only sane way to create a profile, since the
+        quality ids and their ordering are the service's own vocabulary.
+        """
+        self._guard("quality_profiles")
+        data = await self._request("GET", "qualityprofile/schema")
+        return data if isinstance(data, dict) else {}
 
     async def provider_schema(self, resource: str) -> list[dict[str, Any]]:
         """Every implementation this service supports, with its field definitions."""

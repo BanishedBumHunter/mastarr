@@ -74,6 +74,15 @@ async def provider_kinds() -> dict[str, list[str]]:
     }
 
 
+@router.get("/{service_id}/quality-profile-schema")
+async def quality_profile_schema(
+    service_id: int, session: Session = Depends(get_session)
+) -> dict:
+    """Blank profile template — the starting point for creating one."""
+    service = _service_or_404(session, service_id)
+    return await _call(service, lambda a: a.quality_profile_schema())
+
+
 # ---------------------------------------------------------- settings groups
 
 

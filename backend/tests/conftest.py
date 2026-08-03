@@ -103,6 +103,10 @@ ADMIN_ENDPOINTS = [
     ("GET", "/api/library/1/lookup"),
     ("POST", "/api/library/1/add"),
     ("PATCH", "/api/library/1/1"),
+    ("GET", "/api/providers/1/quality-profile-schema"),
+    ("GET", "/api/providers/1/quality_definition"),
+    ("GET", "/api/providers/1/tag"),
+    ("GET", "/api/providers/1/settings/host"),
 ]
 
 # Reachable by Requesters too. Listed so the split is explicit and reviewable, rather than
