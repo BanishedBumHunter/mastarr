@@ -35,8 +35,16 @@ def test_split_target_handles_full_url():
 
 
 def _no_jellyseerr(host: str, port: int) -> None:
-    """Discovery probes every distinct unauthenticated endpoint, not just /ping."""
+    """Discovery probes every distinct unauthenticated endpoint, not just /ping.
+
+    Named for the first one that forced this; it now covers every non-*arr probe path.
+    Registering a service type adds a probe, so this list grows with the registry — which
+    is the point: a new type must be probed everywhere, not only on its own port.
+    """
     respx.get(f"http://{host}:{port}/api/v1/status").mock(
+        return_value=httpx.Response(404)
+    )
+    respx.get(f"http://{host}:{port}/api/health").mock(
         return_value=httpx.Response(404)
     )
 
@@ -106,6 +114,7 @@ async def test_jellyseerr_is_found_without_ping_and_on_a_moved_port():
     as well. Its `/api/v1/status` is unauthenticated and unique to it.
     """
     respx.get("http://host.test:5057/ping").mock(return_value=httpx.Response(307))
+    respx.get("http://host.test:5057/api/health").mock(return_value=httpx.Response(404))
     respx.get("http://host.test:5057/api/v1/status").mock(
         return_value=httpx.Response(
             200, json={"version": "3.3.0", "commitTag": "abc", "updateAvailable": False}

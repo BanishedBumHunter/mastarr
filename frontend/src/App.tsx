@@ -16,6 +16,7 @@ import Discover from './pages/Discover'
 import Library from './pages/Library'
 import Login from './pages/Login'
 import Requests from './pages/Requests'
+import Suggestions from './pages/Suggestions'
 import Settings from './pages/Settings'
 import Wizard from './pages/Wizard'
 
@@ -58,6 +59,7 @@ function AdminApp() {
           { to: '/calendar', label: 'Calendar' },
           { to: '/discover', label: 'Discover' },
           { to: '/requests', label: 'Requests' },
+          { to: '/suggestions', label: 'Suggestions' },
           { to: '/activity', label: 'Activity' },
           { to: '/dashboard', label: 'Status' },
           { to: '/settings', label: 'Settings' },
@@ -71,6 +73,7 @@ function AdminApp() {
           <Route path="/calendar" element={<Calendar />} />
           <Route path="/discover" element={<Discover />} />
           <Route path="/requests" element={<Requests />} />
+          <Route path="/suggestions" element={<Suggestions />} />
           <Route path="/activity" element={<Activity />} />
           <Route path="/dashboard" element={<Dashboard />} />
           {/* Services and Users live inside Settings now — these keep old links working. */}

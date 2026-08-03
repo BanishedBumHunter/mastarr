@@ -43,6 +43,7 @@ def test_registry_knows_every_registered_type():
         "readarr",
         "prowlarr",
         "jellyseerr",
+        "suggestarr",
     }
 
 
@@ -67,6 +68,7 @@ def test_default_ports_match_upstream_defaults():
         8787: "readarr",
         9696: "prowlarr",
         5055: "jellyseerr",
+        5000: "suggestarr",
     }
 
 

@@ -1014,3 +1014,89 @@ table.grid.logs tr.clickable:hover {
 .changelog li {
   margin-bottom: 2px;
 }
+
+/* --------------------------------------------------------- suggestions */
+
+.suggestion-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 12px;
+}
+
+/* A card is a button: the whole thing is one target, and it keeps keyboard
+   selection working without a separate checkbox to tab through. */
+.suggestion {
+  display: flex;
+  gap: 12px;
+  padding: 0;
+  text-align: left;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  position: relative;
+}
+.suggestion:hover {
+  border-color: var(--text-faint);
+}
+.suggestion.selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-card));
+}
+
+.suggestion-poster {
+  width: 92px;
+  min-height: 138px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--bg-inset);
+}
+.suggestion-poster.placeholder {
+  background: var(--bg-inset);
+}
+
+.suggestion-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 10px 10px 0;
+  min-width: 0;
+  flex: 1;
+}
+
+.suggestion-because {
+  font-size: 0.82rem;
+  color: var(--accent);
+}
+
+/* Synopses run long and uneven; clamping keeps the grid on a rhythm. */
+.clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: 0;
+  font-size: 0.84rem;
+}
+
+.suggestion-check {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* The action bar has to stay reachable while scrolling a long queue. */
+.sticky-actions {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 8px 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}

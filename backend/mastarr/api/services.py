@@ -10,7 +10,9 @@ from ..adapters import (
     UnknownServiceType,
     describe_types,
     get_adapter_class,
+    known_types,
 )
+from ..adapters.suggestarr import forget_tokens
 from ..adapters.schemas import ServiceSnapshot
 from ..auth.deps import require_admin
 from ..db import get_session
@@ -36,6 +38,10 @@ def _service_out(service: Service) -> ServiceOut:
         url=service.url,
         enabled=service.enabled,
         has_api_key=bool(service.api_key_encrypted),
+        username=service.username,
+        needs_username=get_adapter_class(service.service_type).requires_username
+        if service.service_type in known_types()
+        else False,
         managed_by_config=service.managed_by_config,
         last_status=service.last_status,
         last_version=service.last_version,
@@ -84,6 +90,7 @@ async def create_service(
         name=body.name,
         service_type=body.service_type.lower(),
         url=body.url.rstrip("/"),
+        username=body.username or None,
         enabled=body.enabled,
     )
     store_api_key(service, body.api_key)
@@ -112,9 +119,14 @@ async def update_service(
         service.url = body.url.rstrip("/")
     if body.enabled is not None:
         service.enabled = body.enabled
+    if body.username is not None:
+        service.username = body.username or None
+        # A username change invalidates any bearer token held for the old account.
+        forget_tokens()
     # Absent means "leave the stored key alone"; empty string means "clear it".
     if body.api_key is not None:
         store_api_key(service, body.api_key or None)
+        forget_tokens()
 
     session.add(service)
     session.commit()

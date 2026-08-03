@@ -179,6 +179,32 @@ gates the Install button on `isDocker`, and so does Mastarr, in both the fleet v
 the install route. The reference stack reports `isDocker: true`, `installable: true`,
 `updateMechanism: null`, which is exactly the combination that looks safe and isn't.
 
+### 19. One secret path, one redaction set
+
+SuggestArr authenticates with a username and password rather than a static key. The
+password lives in `api_key_encrypted` — the field that is already Fernet-encrypted and
+already registered for redaction — and the username, which is not a secret, gets its own
+plain column. A second storage path for secrets would be a second thing to get wrong.
+
+Bearer tokens obtained by logging in are registered with `register_secret` too. Rule 9 is
+about secrets, not specifically about API keys.
+
+`requires_username` is a class var on the adapter and is published in the type catalogue,
+so the service form asks for the right fields without the frontend keeping its own list of
+which types those are. Rule 2 still holds: another password-authenticated type is one file.
+
+### 20. SuggestArr has no published API contract
+
+Everything the SuggestArr adapter calls was read from its `api_service/blueprints/`
+source. Upstream is free to rename any of it without that being a breaking change on their
+side. The adapter is deliberately five calls in one file so the blast radius stays small,
+and it is the one type where a version bump genuinely might break Mastarr.
+
+Its shape differs from every *arr in three ways: `/api` with no version segment,
+`/api/health` instead of `system/status` (and that answers **503 with the diagnosis in the
+body** — read it, don't treat it as a transport failure), and login-for-token instead of a
+static header.
+
 ## Manual control overrides the service, deliberately
 
 Interactive search (`release?seriesId=/movieId=/episodeId=`) returns every candidate with

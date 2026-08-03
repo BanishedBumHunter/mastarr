@@ -109,6 +109,8 @@ export interface Service {
   url: string
   enabled: boolean
   has_api_key: boolean
+  username: string | null
+  needs_username: boolean
   managed_by_config: boolean
   last_status: string | null
   last_version: string | null
@@ -121,6 +123,7 @@ export interface ServiceType {
   api_version: string
   default_port: number
   manages_media: boolean
+  requires_username: boolean
   unsupported: string[]
 }
 
@@ -556,6 +559,38 @@ export type UpdateFleet = {
   failures: ServiceFailure[]
 }
 
+export type Suggestion = {
+  id: number
+  service_id: number | null
+  service_name: string | null
+  tmdb_id: number | null
+  media_kind: string
+  title: string
+  year: number | null
+  overview: string | null
+  poster_url: string | null
+  status: string
+  source_title: string | null
+  rating: number | null
+  requested_by: string | null
+  created_at: string | null
+}
+
+export type SuggestionPage = {
+  items: Suggestion[]
+  total: number
+  page: number
+  per_page: number
+  pages: number
+}
+
+export type SuggestionAvailability = {
+  available: boolean
+  service_id: number | null
+  service_name: string | null
+  message: string | null
+}
+
 export type ScheduledTask = {
   id: number
   name: string
@@ -584,6 +619,7 @@ export const api = {
     service_type: string
     url: string
     api_key?: string
+    username?: string
   }) => request<Service>('/api/services', { method: 'POST', ...body(data) }),
   updateService: (id: number, data: Record<string, unknown>) =>
     request<Service>(`/api/services/${id}`, { method: 'PATCH', ...body(data) }),
@@ -820,6 +856,21 @@ export const api = {
     request<{ url: string; method: string; note: string }>(
       '/api/automation/guard/webhook-url',
     ),
+
+  // -------------------------------------------------------------- suggestions
+  suggestionsAvailability: () =>
+    request<SuggestionAvailability>('/api/suggestions/availability'),
+  suggestions: (status: string, page = 1, perPage = 24, search = '') =>
+    request<SuggestionPage>(
+      `/api/suggestions?status=${encodeURIComponent(status)}&page=${page}` +
+        `&per_page=${perPage}` +
+        (search ? `&search=${encodeURIComponent(search)}` : ''),
+    ),
+  decideSuggestions: (ids: number[], action: string) =>
+    request<{ updated: number }>('/api/suggestions/decide', {
+      method: 'POST',
+      ...body({ ids, action }),
+    }),
 
   // -------------------------------------------------------- system operations
   fleetUpdates: () => request<UpdateFleet>('/api/system/updates'),

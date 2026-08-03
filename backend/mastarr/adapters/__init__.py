@@ -51,6 +51,7 @@ from .schemas import (
     SystemStatus,
 )
 from .sonarr import SonarrAdapter
+from .suggestarr import SuggestArrAdapter
 
 __all__ = [
     "ADAPTERS",
@@ -89,6 +90,7 @@ __all__ = [
     "ServiceUnauthorized",
     "ServiceUnreachable",
     "SonarrAdapter",
+    "SuggestArrAdapter",
     "SystemStatus",
     "UnknownServiceType",
     "UnsupportedOperation",

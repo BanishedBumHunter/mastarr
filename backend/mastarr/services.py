@@ -19,6 +19,7 @@ from .adapters import (
     ServiceStatus,
     UnknownServiceType,
     build_adapter,
+    get_adapter_class,
 )
 from .config import get_settings
 from .crypto import DecryptionError, get_cipher
@@ -52,6 +53,11 @@ def decrypt_api_key(service: Service) -> str | None:
 
 def adapter_for(service: Service) -> ArrAdapter:
     settings = get_settings()
+    extra: dict[str, object] = {}
+    # Only passed to types that ask for it, so every other adapter's signature is
+    # untouched by the existence of password auth.
+    if get_adapter_class(service.service_type).requires_username:
+        extra["username"] = service.username
     return build_adapter(
         service.service_type,
         service.url,
@@ -59,6 +65,7 @@ def adapter_for(service: Service) -> ArrAdapter:
         name=service.name,
         service_id=service.id,
         timeout=settings.http_timeout,
+        **extra,
     )
 
 

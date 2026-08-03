@@ -488,3 +488,34 @@ class ScheduledTask(BaseModel):
     last_execution: datetime | None = None
     last_duration: str | None = None
     next_execution: datetime | None = None
+
+
+# ------------------------------------------------------------------- suggestions
+
+
+class Suggestion(BaseModel):
+    """One SuggestArr proposal awaiting a decision."""
+
+    id: int
+    service_id: int | None = None
+    service_name: str | None = None
+    tmdb_id: int | None = None
+    media_kind: str = ""
+    title: str
+    year: int | None = None
+    overview: str | None = None
+    poster_url: str | None = None
+    status: str = ""
+    source_title: str | None = None
+    """What in your library this was suggested from — the reason to approve or not."""
+    rating: float | None = None
+    requested_by: str | None = None
+    created_at: datetime | None = None
+
+
+class SuggestionPage(BaseModel):
+    items: list[Suggestion] = Field(default_factory=list)
+    total: int = 0
+    page: int = 1
+    per_page: int = 24
+    pages: int = 1

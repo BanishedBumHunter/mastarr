@@ -160,7 +160,7 @@ function DiscoveryPanel() {
                   <tr>
                     <th>Found at</th>
                     <th>Looks like</th>
-                    <th>API key</th>
+                    <th>Credentials</th>
                     <th />
                   </tr>
                 </thead>
@@ -241,7 +241,13 @@ function DiscoveryPanel() {
 function AddServiceForm() {
   const queryClient = useQueryClient()
   const { data: types } = useQuery({ queryKey: ['types'], queryFn: api.serviceTypes })
-  const [form, setForm] = useState({ name: '', service_type: '', url: '', api_key: '' })
+  const [form, setForm] = useState({
+    name: '',
+    service_type: '',
+    url: '',
+    api_key: '',
+    username: '',
+  })
 
   const create = useMutation({
     mutationFn: () =>
@@ -250,9 +256,10 @@ function AddServiceForm() {
         service_type: form.service_type,
         url: form.url,
         api_key: form.api_key || undefined,
+        username: form.username || undefined,
       }),
     onSuccess: async () => {
-      setForm({ name: '', service_type: '', url: '', api_key: '' })
+      setForm({ name: '', service_type: '', url: '', api_key: '', username: '' })
       await queryClient.invalidateQueries({ queryKey: ['services'] })
       await queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },
@@ -308,8 +315,24 @@ function AddServiceForm() {
             onChange={(event) => setForm((prev) => ({ ...prev, url: event.target.value }))}
           />
         </div>
+        {/* Which credential to ask for is the backend's answer, not a hardcoded list of
+            types here — a new password-authenticated adapter needs no frontend change. */}
+        {selected?.requires_username ? (
+          <div>
+            <label htmlFor="suser">Username</label>
+            <input
+              id="suser"
+              value={form.username}
+              onChange={(event) =>
+                setForm((prev) => ({ ...prev, username: event.target.value }))
+              }
+            />
+          </div>
+        ) : null}
         <div>
-          <label htmlFor="skey">API key</label>
+          <label htmlFor="skey">
+            {selected?.requires_username ? 'Password' : 'API key'}
+          </label>
           <input
             id="skey"
             type="password"
@@ -353,6 +376,11 @@ export default function Services() {
       api.updateService(id, { api_key: key }),
     onSuccess: invalidate,
   })
+  const setUsername = useMutation({
+    mutationFn: ({ id, username }: { id: number; username: string }) =>
+      api.updateService(id, { username }),
+    onSuccess: invalidate,
+  })
 
   return (
     <>
@@ -383,7 +411,7 @@ export default function Services() {
                     <th>Name</th>
                     <th>Type</th>
                     <th>URL</th>
-                    <th>API key</th>
+                    <th>Credentials</th>
                     <th>Last seen</th>
                     <th />
                   </tr>
@@ -409,12 +437,28 @@ export default function Services() {
                         <code>{service.url}</code>
                       </td>
                       <td>
-                        {service.has_api_key ? (
-                          <span className="badge online">set</span>
+                        {/* A password-authenticated service is only usable once both
+                            halves are set, so a set password with no username is called
+                            out rather than shown as a green 'set'. */}
+                        {service.needs_username && !service.username ? (
+                          <input
+                            placeholder="Username"
+                            style={{ minWidth: 130 }}
+                            onKeyDown={(event) => {
+                              if (event.key !== 'Enter') return
+                              const value = event.currentTarget.value
+                              if (value)
+                                setUsername.mutate({ id: service.id, username: value })
+                            }}
+                          />
+                        ) : service.has_api_key ? (
+                          <span className="badge online">
+                            {service.username ? `set · ${service.username}` : 'set'}
+                          </span>
                         ) : (
                           <input
                             type="password"
-                            placeholder="Add key"
+                            placeholder={service.needs_username ? 'Add password' : 'Add key'}
                             style={{ minWidth: 140 }}
                             onKeyDown={(event) => {
                               if (event.key !== 'Enter') return

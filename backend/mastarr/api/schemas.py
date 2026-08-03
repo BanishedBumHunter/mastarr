@@ -55,7 +55,10 @@ class ServiceIn(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     service_type: str
     url: str
+    # For password-authenticated types (SuggestArr) this field carries the password.
+    # Same encryption, same redaction, one secret path.
     api_key: str | None = None
+    username: str | None = None
     enabled: bool = True
 
 
@@ -64,6 +67,7 @@ class ServiceUpdate(BaseModel):
     url: str | None = None
     # Absent leaves the stored key untouched; empty string clears it.
     api_key: str | None = None
+    username: str | None = None
     enabled: bool | None = None
 
 
@@ -76,6 +80,10 @@ class ServiceOut(BaseModel):
     url: str
     enabled: bool
     has_api_key: bool
+    # A username is not a secret, so unlike the key it is returned as-is — the form needs
+    # to show which account is configured.
+    username: str | None = None
+    needs_username: bool = False
     managed_by_config: bool
     last_status: str | None = None
     last_version: str | None = None

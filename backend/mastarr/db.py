@@ -11,7 +11,7 @@ from .config import Settings, get_settings
 
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 _engine = None
 
@@ -76,6 +76,16 @@ def _apply_additive_migrations(session: Session, from_version: int) -> None:
         if "jellyseerr_user_id" not in columns:
             session.exec(text("ALTER TABLE user ADD COLUMN jellyseerr_user_id INTEGER"))  # type: ignore[arg-type]
             log.info("Added user.jellyseerr_user_id")
+
+    if from_version < 4:
+        # v4: password-authenticated service types need somewhere to keep the username.
+        columns = {
+            row[1]
+            for row in session.exec(text("PRAGMA table_info(service)")).all()  # type: ignore[arg-type]
+        }
+        if "username" not in columns:
+            session.exec(text("ALTER TABLE service ADD COLUMN username VARCHAR"))  # type: ignore[arg-type]
+            log.info("Added service.username")
 
 
 def get_session() -> Iterator[Session]:

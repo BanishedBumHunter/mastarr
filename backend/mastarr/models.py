@@ -28,6 +28,11 @@ class Service(SQLModel, table=True):
     service_type: str = Field(index=True)
     url: str
     api_key_encrypted: Optional[str] = None
+    # Set only for service types that authenticate with a username and password rather
+    # than a static API key (SuggestArr). The password lives in `api_key_encrypted`,
+    # reusing the one Fernet seam and the one log-redaction path rather than growing a
+    # second way to hold a secret.
+    username: Optional[str] = None
     enabled: bool = True
 
     # Populated from the last successful system/status call, so the UI can show identity

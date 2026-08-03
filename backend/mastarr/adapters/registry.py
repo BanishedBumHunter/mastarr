@@ -16,6 +16,7 @@ from .prowlarr import ProwlarrAdapter
 from .radarr import RadarrAdapter
 from .readarr import ReadarrAdapter
 from .sonarr import SonarrAdapter
+from .suggestarr import SuggestArrAdapter
 
 # Adding a service type is one import plus one line here. Nothing else in the codebase
 # should need to know the type exists.
@@ -26,6 +27,7 @@ ADAPTERS: dict[str, Type[ArrAdapter]] = {
     ReadarrAdapter.service_type: ReadarrAdapter,
     ProwlarrAdapter.service_type: ProwlarrAdapter,
     JellyseerrAdapter.service_type: JellyseerrAdapter,
+    SuggestArrAdapter.service_type: SuggestArrAdapter,
 }
 
 
@@ -91,6 +93,7 @@ def describe_types() -> list[dict[str, object]]:
             "api_version": cls.api_version,
             "default_port": cls.default_port,
             "manages_media": cls.media_endpoint is not None,
+            "requires_username": cls.requires_username,
             "media_kind": cls.media_kind,
             "unsupported": sorted(cls.unsupported),
         }

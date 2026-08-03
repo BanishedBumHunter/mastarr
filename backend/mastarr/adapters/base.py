@@ -166,6 +166,10 @@ class ArrAdapter(ABC):
     media_endpoint: ClassVar[str | None] = None
     # Endpoints this type does not implement, mapped to why. Checked before any request.
     unsupported: ClassVar[frozenset[str]] = frozenset()
+    # True for types that authenticate with a username and password instead of a static
+    # API key. Lives here so the service form can ask for the right fields without the
+    # frontend knowing which types those are.
+    requires_username: ClassVar[bool] = False
     # What this type calls its items in the unified UI.
     media_kind: ClassVar[str] = "item"
     # Extra query params the calendar endpoint needs (Sonarr wants the series expanded).
@@ -238,11 +242,7 @@ class ArrAdapter(ABC):
         unauthenticated request to a live *arr returns 401 quickly and cheaply.
         """
         url = path if absolute else f"{self.api_base}/{path.lstrip('/')}"
-        headers = {"Accept": "application/json"}
-        if self.api_key:
-            # Header, never a query param — query params end up in access logs on every
-            # reverse proxy between here and the service.
-            headers["X-Api-Key"] = self.api_key
+        headers = {"Accept": "application/json", **await self._auth_headers()}
 
         client = await self._get_client()
         try:
@@ -291,6 +291,18 @@ class ArrAdapter(ABC):
                 f"at the service itself and not a proxy or login page.",
                 service=self.name,
             ) from exc
+
+    async def _auth_headers(self) -> dict[str, str]:
+        """Credentials for one request.
+
+        Every *arr and Jellyseerr take a static API key in a header — never a query
+        param, since those land in the access log of every reverse proxy between here and
+        the service. Overridden by types that authenticate differently: SuggestArr trades
+        a username and password for a short-lived bearer token.
+        """
+        if not self.api_key:
+            return {}
+        return {"X-Api-Key": self.api_key}
 
     def _guard(self, operation: str) -> None:
         if operation in self.unsupported:
